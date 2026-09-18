@@ -201,4 +201,4 @@ async def clear_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("عذراً، لا تمتلك صلاحية مسح الرسائل.", delete_after=5)
 
-bot.run("MTU1MDAwMzIzMDM4NDE5MzU5Ng.GVVEMq.dIkxnGW_sP_FUKk-xMNk6ARZDQJyqWVbejkh3Y")
+bot.run(os.getenv("DISCORD_TOKEN"))
