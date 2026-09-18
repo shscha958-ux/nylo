@@ -3,7 +3,7 @@ import json
 import os
 import aiohttp
 from datetime import datetime
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import discord
 from discord.ext import commands
 
@@ -32,14 +32,14 @@ def save_data(data):
 async def on_ready():
     print(f"تم تسجيل الدخول بنجاح باسم: {bot.user.name}")
 
-async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes):
+async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, display_name: str, username: str):
     avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
     banner_img = Image.open(io.BytesIO(banner_bytes)).convert("RGBA")
 
     scale = 2
     card_width = 600 * scale
     banner_height = 220 * scale
-    card_height = 320 * scale
+    card_height = 340 * scale
     
     avatar_inner_size = 140 * scale
     border_thickness = 8 * scale
@@ -73,6 +73,25 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes):
     avatar_inner_y = avatar_outer_y + border_thickness
     card.paste(avatar_img, (avatar_inner_x, avatar_inner_y), avatar_mask)
 
+    # كتابة اسم العضو (Display Name) واسم المستخدم (Username) على البطاقة
+    draw = ImageDraw.Draw(card)
+    
+    try:
+        font_name = ImageFont.truetype("arial.ttf", 26 * scale)
+        font_username = ImageFont.truetype("arial.ttf", 18 * scale)
+    except IOError:
+        font_name = ImageFont.load_default()
+        font_username = ImageFont.load_default()
+
+    text_x = avatar_outer_x + avatar_outer_size + (20 * scale)
+    text_y = avatar_outer_y + (30 * scale)
+
+    # كتابة اسم العضو
+    draw.text((text_x, text_y), display_name, fill=(255, 255, 255, 255), font=font_name)
+    
+    # كتابة اليوزر تحته
+    draw.text((text_x, text_y + (38 * scale)), f"@{username}", fill=(170, 170, 170, 255), font=font_username)
+
     output = io.BytesIO()
     card.save(output, format="PNG")
     output.seek(0)
@@ -87,7 +106,17 @@ class ProfileCardView(discord.ui.View):
     @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary)
     async def br_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
-        card_io = await generate_profile_card(self.avatar_bytes, self.banner_bytes)
+        
+        # سحب اسم الشخص الذي قام بالضغط على الزر
+        display_name = interaction.user.display_name
+        username = interaction.user.name
+        
+        card_io = await generate_profile_card(
+            self.avatar_bytes, 
+            self.banner_bytes, 
+            display_name, 
+            username
+        )
         file_to_send = discord.File(card_io, filename="discord_profile.png")
         await interaction.followup.send(file=file_to_send, ephemeral=True)
 
@@ -111,18 +140,9 @@ async def nashar(ctx):
         pass
 
     view = ProfileCardView(avatar_bytes, banner_bytes)
-    files_list = [discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")]
-    if len(attachments) > 1:
-        files_list.append(discord.File(io.BytesIO(banner_bytes), filename="banner.png"))
-        
-    await ctx.send(files=files_list, view=view)
-
-@nashar.error
-async def nashar_error(ctx, error):
-    if isinstance(error, commands.MissingRole):
-        await ctx.send("عذراً، لا تمتلك الرول المطلوب لاستخدام أمر النشر.", delete_after=5)
-    elif isinstance(error, commands.MissingPermissions):
-        await ctx.send("عذراً، ليس لديك الصلاحيات الكافية.", delete_after=5)
+    
+    # إرسال رسالة تحتوي على الأزرار واستخدام نفس الصور المحددة
+    await ctx.send("اضغط على الزر أدناه للحصول على بطاقتك الشخصية بالصور المحددة:", view=view)
 
 @bot.command(name="ضبط_نيترو")
 @commands.has_role(1513635397568303174)
