@@ -236,4 +236,4 @@ async def clear_error(ctx, error):
 
 if __name__ == "__main__":
     keep_alive()
-    bot.run(os.getenv("MTU1MDAwMzIzMDM4NDE5MzU5Ng.GKv45S.UKhwme1Op-39zugMnkCViMGGmFNdFU7FHPg0O8"))
+    bot.run(os.getenv("DISCORD_TOKEN"))
