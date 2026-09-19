@@ -31,7 +31,7 @@ def save_json(filename, data):
 async def broadcast(ctx, *, message: str):
   await ctx.message.delete()
   embed = discord.Embed(
-      title="📢 إعلان إداري", description=message, color=discord.Color.blue()
+      title="إعلان إداري", description=message, color=discord.Color.blue()
   )
   embed.set_footer(
       text=f"تم النشر بواسطة: {ctx.author.display_name}",
@@ -40,13 +40,13 @@ async def broadcast(ctx, *, message: str):
   await ctx.send(embed=embed)
 
 
-# أمر اللايك (يدعم الإيموجيات العادية والمخصصة لدسكورد)
+# أمر اللايك (يدعم الإيموجيات العادية والمخصصة)
 @bot.command(name="لايك")
 async def like(ctx, emoji: str = "👍"):
   try:
     await ctx.message.add_reaction(emoji)
   except Exception as e:
-    await ctx.send(f"❌ تعذر إضافة التفاعل: {e}")
+    await ctx.send(f"تعذر إضافة التفاعل: {e}")
 # أمر التقييم (يجلب الاسم، الأفاتار، والبنر بدقة)
 @bot.command(name="تقيم")
 async def rate_profile(ctx, member: discord.Member = None):
@@ -54,7 +54,7 @@ async def rate_profile(ctx, member: discord.Member = None):
     member = ctx.author
 
   user = await bot.fetch_user(member.id)
-  loading_msg = await ctx.send("🔄 جاري تصميم بطاقة البروفايل...")
+  loading_msg = await ctx.send("جاري تصميم بطاقة البروفايل...")
 
   async with aiohttp.ClientSession() as session:
     avatar_url = (
@@ -424,7 +424,8 @@ async def roulette(ctx):
   file = discord.File(buffer, filename="roulette_winner.png")
   await ctx.send(
       content=f"مبروك الفوز! الفائز الأخير في الروليت هو: {winner.mention}",
-    # واجهة زر إلغاء الميوت بدون إيموجيات
+   
+
 class MuteCancelView(discord.ui.View):
 
   def __init__(self, member: discord.Member):
@@ -445,10 +446,11 @@ class MuteCancelView(discord.ui.View):
           content=f"تم إلغاء الميوت عن {self.member.mention}", view=self
       )
     except Exception as e:
-      await interaction.response.send_message(f"حدث خطأ: {e}", ephemeral=True)
+      await interaction.response.send_message(
+          f"حدث خطأ: {str(e)}", ephemeral=True
+      )
 
 
-# أمر الميوت الرسمي (Timeout)
 @bot.command(name="اسكت")
 @commands.has_permissions(moderate_members=True)
 async def mute_member(ctx, member: discord.Member, minutes: int = 5):
@@ -462,4 +464,5 @@ async def mute_member(ctx, member: discord.Member, minutes: int = 5):
         view=view,
     )
   except Exception as e:
-    await ctx.send(f"تعذر تطبيق الميوت: {e}")
+
+   await ctx.send(f"تعذر تطبيق الميوت: {e}")
