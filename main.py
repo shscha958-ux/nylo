@@ -1,19 +1,19 @@
+import io
+import json
+import os
+from datetime import datetime, timedelta
+from PIL import Image, ImageDraw, ImageFont
 import discord
 from discord.ext import commands
-import asyncio
-import os
-import random
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
 from flask import Flask
 from threading import Thread
 
-# ==================== إعدادات الخادم للبقاء 24/7 (Render) ====================
+# إعداد خادم الويب الوهمي لمنع البوت من الانطفاء (Render 24/7)
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is running 24/7!"
+    return "Bot is online and running!"
 
 def run():
     app.run(host='0.0.0.0', port=8080)
@@ -22,397 +22,318 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# ==================== إعدادات البوت الأساسية ====================
 intents = discord.Intents.default()
 intents.message_content = True
-intents.guilds = True
 intents.members = True
-intents.voice_states = True
 
-bot = commands.Bot(command_prefix=["!", "-"], intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-user_points = {}
-user_inventory = {}
-MASTER_ADMIN_ROLE = 1550706151308660856
+DATA_FILE = "nitro_data.json"
+
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return {}
+    return {}
+
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user.name} (ID: {bot.user.id})')
-    print('Bot is ready and running!')
+    print(f"تم تسجيل الدخول بنجاح باسم: {bot.user.name}")
 
-def check_admin(ctx):
-    return any(role.id == MASTER_ADMIN_ROLE for role in ctx.author.roles)
+# دالة رسم وتصميم بطاقة البروفايل (الخلفية العلوية البنر والأسفل سوداء سادة مع الأفتار)
+async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, display_name: str, username: str):
+    avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
+    banner_img = Image.open(io.BytesIO(banner_bytes)).convert("RGBA")
 
-# ==================== 1. أوامر الإدارة والعقوبات (القائمة المنسدلة والفك اليدوي) ====================
-class MuteSelect(discord.ui.Select):
-    def __init__(self, target_member: discord.Member, is_timeout: bool):
-        self.target_member = target_member
-        self.is_timeout = is_timeout
-        
-        options = [
-            discord.SelectOption(label="المشاكل", description="15 دقيقة", value="15_مشاكل", emoji="⚠️"),
-            discord.SelectOption(label="ايحاءات جنسية", description="30 دقيقة", value="30_إيحاء جنسي", emoji="🔞"),
-            discord.SelectOption(label="السب", description="40 دقيقة", value="40_السب", emoji="🔇"),
-            discord.SelectOption(label="طاري الاهل", description="60 دقيقة", value="60_طاري أهل", emoji="🛡️"),
-            discord.SelectOption(label="القذف", description="120 دقيقة", value="120_القذف", emoji="❌"),
-        ]
-        super().__init__(placeholder="اختر سبب العقوبة...", min_values=1, max_values=1, options=options, custom_id="mute_select_menu")
+    scale = 2
+    card_width = 600 * scale
+    banner_height = 220 * scale
+    card_height = 340 * scale
+    
+    avatar_inner_size = 140 * scale
+    border_thickness = 8 * scale
+    avatar_outer_size = avatar_inner_size + (border_thickness * 2)
 
-    async def callback(self, interaction: discord.Interaction):
-        data = self.values[0].split("_")
-        minutes = int(data[0])
-        reason = data[1]
+    banner_img = banner_img.resize((card_width, banner_height), Image.Resampling.LANCZOS)
 
-        try:
-            if self.is_timeout:
-                delta = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
-                await self.target_member.timeout(delta, reason=reason)
-                await interaction.response.send_message(f"تم عمل اسكت للعضو {self.target_member.mention} بسبب **{reason}** لمدة {minutes} دقيقة.", ephemeral=False)
-            else:
-                await self.target_member.edit(mute=True, reason=reason)
-                await interaction.response.send_message(f"تم إعطاء ميوت صوتي لـ {self.target_member.mention} بسبب **{reason}**.", ephemeral=False)
-        except Exception as e:
-            await interaction.response.send_message(f"حدث خطأ: تأكد أن رول البوت أعلى من رول العضو وأن البوت يمتلك صلاحيات كافية. ({e})", ephemeral=True)
+    # اللون الأسود السادة للمساحة السفلية وتحت الأفتار
+    bg_color = (0, 0, 0, 255)
+    card = Image.new("RGBA", (card_width, card_height), bg_color)
+    card.paste(banner_img, (0, 0))
 
-class MuteSelectView(discord.ui.View):
-    def __init__(self, target_member: discord.Member, is_timeout: bool):
+    def create_smooth_circle_mask(size):
+        mask_scale = 4
+        big_size = size * mask_scale
+        mask = Image.new("L", (big_size, big_size), 0)
+        draw = ImageDraw.Draw(mask)
+        draw.ellipse((0, 0, big_size, big_size), fill=255)
+        return mask.resize((size, size), Image.Resampling.LANCZOS)
+
+    border_mask = create_smooth_circle_mask(avatar_outer_size)
+    border_circle = Image.new("RGBA", (avatar_outer_size, avatar_outer_size), bg_color)
+    
+    avatar_outer_x = 30 * scale
+    avatar_outer_y = banner_height - (avatar_outer_size // 2)
+    card.paste(border_circle, (avatar_outer_x, avatar_outer_y), border_mask)
+
+    avatar_img = avatar_img.resize((avatar_inner_size, avatar_inner_size), Image.Resampling.LANCZOS)
+    avatar_mask = create_smooth_circle_mask(avatar_inner_size)
+    
+    avatar_inner_x = avatar_outer_x + border_thickness
+    avatar_inner_y = avatar_outer_y + border_thickness
+    card.paste(avatar_img, (avatar_inner_x, avatar_inner_y), avatar_mask)
+
+    draw = ImageDraw.Draw(card)
+    
+    try:
+        font_name = ImageFont.truetype("arial.ttf", 26 * scale)
+        font_username = ImageFont.truetype("arial.ttf", 18 * scale)
+    except IOError:
+        font_name = ImageFont.load_default()
+        font_username = ImageFont.load_default()
+
+    text_x = avatar_outer_x + avatar_outer_size + (20 * scale)
+    text_y = avatar_outer_y + (30 * scale)
+
+    draw.text((text_x, text_y), display_name, fill=(255, 255, 255, 255), font=font_name)
+    draw.text((text_x, text_y + (38 * scale)), f"@{username}", fill=(170, 170, 170, 255), font=font_username)
+
+    output = io.BytesIO()
+    card.save(output, format="PNG")
+    output.seek(0)
+    return output
+
+class ProfileCardView(discord.ui.View):
+    def __init__(self, banner_bytes: bytes):
         super().__init__(timeout=None)
-        self.add_item(MuteSelect(target_member, is_timeout))
+        self.banner_bytes = banner_bytes
 
-    @discord.ui.button(label="إلغاء", style=discord.ButtonStyle.danger, custom_id="cancel_mute_menu")
-    async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("تم إلغاء الأمر.", ephemeral=True)
-        self.stop()
+    @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary)
+    async def br_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            avatar_asset = interaction.user.display_avatar.with_size(256)
+            avatar_bytes = await avatar_asset.read()
+            
+            display_name = interaction.user.display_name
+            username = interaction.user.name
+            
+            card_io = await generate_profile_card(
+                avatar_bytes, 
+                self.banner_bytes, 
+                display_name, 
+                username
+            )
+            file_to_send = discord.File(card_io, filename="discord_profile.png")
+            await interaction.followup.send(file=file_to_send, ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"حدث خطأ أثناء إنشاء البطاقة: {e}", ephemeral=True)
 
-@bot.command(name="اسكت")
-async def askat(ctx, member: discord.Member = None):
-    if not check_admin(ctx):
-        return await ctx.send("ليس لديك رول الإدارة المخصص لاستخدام هذا الأمر.", delete_after=5)
-    if not member:
-        return await ctx.send("الرجاء منشن العضو المستهدف.")
-    view = MuteSelectView(member, is_timeout=True)
-    await ctx.send(f"يرجي تحديد سبب العقوبه • {member.mention}:", view=view)
+# قائمة الرولات المسموح لها باستخدام أمر !نشر
+NASHAR_ROLES = [
+    1550705477485068348,
+    1513655846968496128,
+    1513655977931702322,
+    1513635397568303174,
+    1513655552700317926
+]
 
-@bot.command(name="ميوت")
-async def mute_voice(ctx, member: discord.Member = None):
-    if not check_admin(ctx):
-        return await ctx.send("ليس لديك رول الإدارة المخصص لاستخدام هذا الأمر.", delete_after=5)
-    if not member:
-        return await ctx.send("الرجاء منشن العضو المستهدف.")
-    view = MuteSelectView(member, is_timeout=False)
-    await ctx.send(f"يرجي تحديد سبب العقوبه • {member.mention}:", view=view)
+# قائمة الرولات المسموح لها باستخدام أمر !مسح
+CLEAR_ROLES = [
+    1513655552700317926,
+    1513635397568303174,
+    1550710745183035483,
+    1513655977931702322,
+    1513655846968496128
+]
 
-@bot.command(name="فك")
-async def unmute_timeout(ctx, member: discord.Member = None):
-    if not check_admin(ctx):
-        return await ctx.send("ليس لديك رول الإدارة المخصص لاستخدام هذا الأمر.", delete_after=5)
-    if not member:
-        return await ctx.send("الرجاء منشن العضو.")
-    try:
-        await member.timeout(None, reason=f"فك يدوي بواسطة {ctx.author}")
-        await ctx.send(f"تم فك العقوبة الكتابية يدوياً عن {member.mention}.")
-    except Exception as e:
-        await ctx.send(f"تعذر فك العقوبة: {e}")
+# دوال التحقق من الرولات
+def has_nashar_role():
+    async def predicate(ctx):
+        if any(role.id in NASHAR_ROLES for role in ctx.author.roles):
+            return True
+        raise commands.MissingRole("رول نشر مطلوب")
+    return commands.check(predicate)
 
-@bot.command(name="تكلم")
-async def unmute_voice(ctx, member: discord.Member = None):
-    if not check_admin(ctx):
-        return await ctx.send("ليس لديك رول الإدارة المخصص لاستخدام هذا الأمر.", delete_after=5)
-    if not member:
-        return await ctx.send("الرجاء منشن العضو.")
-    try:
-        await member.edit(mute=False, reason=f"فك صوتي يدوي بواسطة {ctx.author}")
-        await ctx.send(f"تم فك الميوت الصوتي يدوياً عن {member.mention}.")
-    except Exception as e:
-        await ctx.send(f"تعذر فك الميوت الصوتي: {e}")
+def has_clear_role():
+    async def predicate(ctx):
+        if any(role.id in CLEAR_ROLES for role in ctx.author.roles):
+            return True
+        raise commands.MissingRole("رول مسح مطلوب")
+    return commands.check(predicate)
 
-
-# ==================== 2. أوامر النشر والتفاعل (!نشر و !لايك) ====================
+# 1. أمر النشر
 @bot.command(name="نشر")
-@commands.has_permissions(administrator=True)
-async def broadcast(ctx, *, message: str):
-    await ctx.message.delete()
-    embed = discord.Embed(
-        title="إعلان إداري", description=message, color=discord.Color.blue()
-    )
-    embed.set_footer(
-        text=f"تم النشر بواسطة: {ctx.author.display_name}",
-        icon_url=ctx.author.display_avatar.url,
-    )
-    await ctx.send(embed=embed)
+@has_nashar_role()
+async def nashar(ctx):
+    if len(ctx.message.attachments) < 1:
+        await ctx.send("يرجى إرفاق صورة البنر مع الأمر.", delete_after=6)
+        return
 
-@bot.command(name="لايك")
-async def like(ctx, emoji: str = "👍"):
+    banner_attachment = ctx.message.attachments[0]
+    banner_bytes = await banner_attachment.read()
+
     try:
-        await ctx.message.add_reaction(emoji)
-    except Exception as e:
-        await ctx.send(f"تعذر إضافة التفاعل: {e}")
+        await ctx.message.delete()
+    except Exception:
+        pass
 
+    view = ProfileCardView(banner_bytes)
+    await ctx.send("اضغط على الزر أدناه (Br) لإنشاء بطاقتك الشخصية:", view=view)
 
-# ==================== 3. أمر التقييم بتصميم البروفايل النظيف (البنر + الأفتار فقط) ====================
+@nashar.error
+async def nashar_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send("عذراً، هذا الأمر مخصص للأشخاص الذين يحملون الرولات المعتمدة فقط.", delete_after=5)
+
+# 2. أمر التقييم
 @bot.command(name="تقيم")
 async def taqeem(ctx, member: discord.Member = None):
     target = member or ctx.author
     try:
-        user_obj = await bot.fetch_user(target.id)
-    except:
-        user_obj = target
+        fetched_user = await bot.fetch_user(target.id)
+    except Exception:
+        fetched_user = target
 
-    width, height = 900, 520
-    card = Image.new("RGBA", (width, height), (24, 25, 28, 255))
-    draw = ImageDraw.Draw(card)
-
-    # 1. وضع البنر في الأعلى بجودة عالية
-    if user_obj.banner:
-        banner_bytes = await user_obj.banner.read()
-        banner_img = Image.open(BytesIO(banner_bytes)).convert("RGBA")
-        banner_img = banner_img.resize((width, 320), Image.Resampling.LANCZOS)
-        card.paste(banner_img, (0, 0))
-    else:
-        draw.rectangle([0, 0, width, 320], fill=(45, 47, 52, 255))
-
-    # 2. خلفية المساحة السفلية السوداء بالكامل
-    draw.rectangle([0, 320, width, height], fill=(18, 19, 22, 255))
-
-    # 3. جلب وصنع الأفتار الدائري مع إطار متناسق وبجودة عالية
-    avatar_bytes = await target.display_avatar.read()
-    avatar_img = Image.open(BytesIO(avatar_bytes)).convert("RGBA")
-    avatar_size, avatar_border = 180, 8
-    avatar_img = avatar_img.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
-    
-    mask = Image.new("L", (avatar_size, avatar_size), 0)
-    draw_mask = ImageDraw.Draw(mask)
-    draw_mask.ellipse((0, 0, avatar_size, avatar_size), fill=255)
-    
-    avatar_bg = Image.new("RGBA", (avatar_size + avatar_border*2, avatar_size + avatar_border*2), (18, 19, 22, 255))
-    draw_abg = ImageDraw.Draw(avatar_bg)
-    draw_abg.ellipse((0, 0, avatar_size + avatar_border*2, avatar_size + avatar_border*2), fill=(18, 19, 22, 255))
-    
-    card.paste(avatar_bg, (54, 220), avatar_bg)
-    card.paste(avatar_img, (62, 228), mask)
-
-    buffer = BytesIO()
-    card.save(buffer, format="PNG", quality=95)
-    buffer.seek(0)
-    
-    file = discord.File(buffer, filename="taqeem.png")
-    await ctx.send(file=file)
-
-
-# ==================== 4. نظام النقاط والتوزيع (-n) ====================
-@bot.command(name="n")
-async def distribute_points(ctx, amount: int = 0, member: discord.Member = None):
-    if not check_admin(ctx):
-        return await ctx.send("ليس لديك الصلاحية لتوزيع النقاط.", delete_after=5)
-    if not member or amount <= 0:
-        return await ctx.send("الاستخدام الصحيح: `-n [الرقم] [@العضو]`")
-    
-    user_points[member.id] = user_points.get(member.id, 0) + amount
-    await ctx.send(f"تم إضافة `{amount}` نقطة إلى العضو {member.mention}. رصيده الحالي: `{user_points[member.id]}` نقطة.")
-
-
-# ==================== 5. أمر سحب الأعضاء (-سحب) ====================
-@bot.command(name="سحب")
-async def pull_member(ctx, member: discord.Member = None):
-    if not ctx.author.voice:
-        return await ctx.send("يجب أن تكون في روم صوتي لتتمكن من استخدام أمر السحب.")
-    if not member:
-        return await ctx.send("الرجاء منشن العضو المراد سحبه.")
-    if not member.voice:
-        return await ctx.send("العضو المستهدف ليس في أي روم صوتي.")
-    
     try:
-        target_channel = ctx.author.voice.channel
-        await member.move_to(target_channel, reason=f"سحب بواسطة {ctx.author}")
-        await ctx.send(f"تم سحب العضو {member.mention} إلى رومك الصوتي بنجاح.")
+        if fetched_user.banner:
+            banner_asset = fetched_user.banner.with_size(512)
+            banner_bytes = await banner_asset.read()
+        else:
+            banner_asset = target.display_avatar.with_size(512)
+            banner_bytes = await banner_asset.read()
+
+        avatar_asset = target.display_avatar.with_size(256)
+        avatar_bytes = await avatar_asset.read()
+
+        card_io = await generate_profile_card(
+            avatar_bytes,
+            banner_bytes,
+            target.display_name,
+            target.name
+        )
+        
+        file_to_send = discord.File(card_io, filename="taqeem_profile.png")
+        await ctx.send(file=file_to_send)
     except Exception as e:
-        await ctx.send(f"حدث خطأ أثناء محاولة سحب العضو: {e}")
+        await ctx.send(f"حدث خطأ أثناء إنشاء بطاقة التقييم: {e}", delete_after=7)
 
-
-# ==================== 6. لعبة الروليت (بدون إيموجيات، عجلة سوداء، أسماء بيضاء وأفتار بالوسط) ====================
-class RouletteShopView(discord.ui.View):
-    def __init__(self, user_id: int):
-        super().__init__(timeout=60)
-        self.user_id = user_id
-
-    @discord.ui.button(label="قنبلة (10 نقاط)", style=discord.ButtonStyle.danger, custom_id="shop_bomb")
-    async def buy_bomb(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("هذا المتجر ليس لك!", ephemeral=True)
-        pts = user_points.get(self.user_id, 0)
-        if pts < 10:
-            return await interaction.response.send_message("ليس لديك نقاط كافية لشراء القنبلة.", ephemeral=True)
-        user_points[self.user_id] -= 10
-        inv = user_inventory.setdefault(self.user_id, {"bomb": 0, "shield": 0, "attack": 0})
-        inv["bomb"] += 1
-        await interaction.response.send_message("اشتريت قنبلة بنجاح!", ephemeral=True)
-
-    @discord.ui.button(label="حماية (15 نقطة)", style=discord.ButtonStyle.primary, custom_id="shop_shield")
-    async def buy_shield(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("هذا المتجر ليس لك!", ephemeral=True)
-        pts = user_points.get(self.user_id, 0)
-        if pts < 15:
-            return await interaction.response.send_message("ليس لديك نقاط كافية لشراء الحماية.", ephemeral=True)
-        user_points[self.user_id] -= 15
-        inv = user_inventory.setdefault(self.user_id, {"bomb": 0, "shield": 0, "attack": 0})
-        inv["shield"] += 1
-        await interaction.response.send_message("اشتريت درع حماية بنجاح!", ephemeral=True)
-
-    @discord.ui.button(label="هجمة عكسية (18 نقطة)", style=discord.ButtonStyle.success, custom_id="shop_attack")
-    async def buy_attack(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("هذا المتجر ليس لك!", ephemeral=True)
-        pts = user_points.get(self.user_id, 0)
-        if pts < 18:
-            return await interaction.response.send_message("ليس لديك نقاط كافية لشراء الهجمة.", ephemeral=True)
-        user_points[self.user_id] -= 18
-        inv = user_inventory.setdefault(self.user_id, {"bomb": 0, "shield": 0, "attack": 0})
-        inv["attack"] += 1
-        await interaction.response.send_message("اشتريت هجمة عكسية بنجاح!", ephemeral=True)
-
-class RouletteMainView(discord.ui.View):
-    def __init__(self, game_session):
-        super().__init__(timeout=None)
-        self.game_session = game_session
-
-    @discord.ui.button(label="دخول", style=discord.ButtonStyle.success, custom_id="roulette_join")
-    async def join_game(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user in self.game_session.players:
-            return await interaction.response.send_message("أنت منضم مسبقاً في اللعبة!", ephemeral=True)
-        self.game_session.players.append(interaction.user)
-        await interaction.response.send_message(f"انضممت إلى لعبة الروليت بنجاح! (عدد اللاعبين: {len(self.game_session.players)})", ephemeral=True)
-
-    @discord.ui.button(label="متجر الخصائص", style=discord.ButtonStyle.secondary, custom_id="roulette_shop")
-    async def open_shop(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = RouletteShopView(interaction.user.id)
-        await interaction.response.send_message("اختر ما تريد شراءه:", view=view, ephemeral=True)
-
-    @discord.ui.button(label="الحقيبه", style=discord.ButtonStyle.secondary, custom_id="roulette_bag")
-    async def open_inventory(self, interaction: discord.Interaction, button: discord.ui.Button):
-        inv = user_inventory.get(interaction.user.id, {"bomb": 0, "shield": 0, "attack": 0})
-        await interaction.response.send_message(f"حقيقتك:\nقنابل: {inv['bomb']}\nدروع حماية: {inv['shield']}\nهجمات عكسية: {inv['attack']}", ephemeral=True)
-
-    @discord.ui.button(label="احصائيات", style=discord.ButtonStyle.secondary, custom_id="roulette_stats")
-    async def open_stats(self, interaction: discord.Interaction, button: discord.ui.Button):
-        pts = user_points.get(interaction.user.id, 0)
-        await interaction.response.send_message(f"نقاطك الحالية: `{pts}` نقطة.", ephemeral=True)
-
-class RouletteGameSession:
-    def __init__(self, ctx):
-        self.ctx = ctx
-        self.players = []
-
-def generate_roulette_image(players, center_avatar_bytes):
-    size = 600
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 255))
-    draw = ImageDraw.Draw(img)
-    
-    num_players = len(players) if players else 1
-    angle_step = 360 / num_players
-    
+# 3. أمر ضبط التاريخ
+@bot.command(name="ضبط")
+@commands.has_role(1513635397568303174)
+async def set_nitro(ctx, member: discord.Member, target_date: str):
     try:
-        font_player = ImageFont.truetype("arial.ttf", 22)
-    except:
-        font_player = ImageFont.load_default()
+        datetime.strptime(target_date, "%Y-%m-%d")
+        data = load_data()
+        data[str(member.id)] = target_date
+        save_data(data)
+        await ctx.send(f"✅ تم حفظ تاريخ بداية النيترو للعضو {member.mention} بنجاح إلى: `{target_date}`")
+    except ValueError:
+        await ctx.send("خطأ في الصيغة. استخدم الشكل التالي:\n`!ضبط @العضو 2026-06-07`", delete_after=10)
 
-    for i, player in enumerate(players):
-        start_angle = i * angle_step
-        end_angle = (i + 1) * angle_step
-        draw.pieslice([50, 50, size-50, size-50], start=start_angle, end=end_angle, fill=(15, 15, 15, 255), outline=(255, 255, 255, 255))
-        
-        import math
-        mid_angle = math.radians(start_angle + (angle_step / 2))
-        text_x = (size / 2) + 140 * math.cos(mid_angle)
-        text_y = (size / 2) + 140 * math.sin(mid_angle)
-        
-        name_text = player.display_name[:10]
-        draw.text((text_x - 30, text_y - 10), name_text, fill=(255, 255, 255, 255), font=font_player)
+@set_nitro.error
+async def set_nitro_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("عذراً، أمر `!ضبط` مخصص فقط للأشخاص الذين يحملون الرول المعتمد.", delete_after=5)
 
-    if center_avatar_bytes:
-        avatar = Image.open(BytesIO(center_avatar_bytes)).convert("RGBA")
-        avatar_size = 140
-        avatar = avatar.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
+# دالة مساعدة لحساب الوقت المتبقي بناءً على نوع الاشتراك
+async def calculate_nitro_time(ctx, duration_type):
+    data = load_data()
+    user_id = str(ctx.author.id)
+    
+    if user_id not in data:
+        await ctx.send("عذراً، لم يتم تسجيل تاريخ النيترو الخاص بك. اطلب من المشرف ضبطه باستخدام أمر `!ضبط`.", delete_after=7)
+        return
         
-        mask = Image.new("L", (avatar_size, avatar_size), 0)
-        d_mask = ImageDraw.Draw(mask)
-        d_mask.ellipse((0, 0, avatar_size, avatar_size), fill=255)
+    try:
+        start_date_str = data[user_id]
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
         
-        offset = (size - avatar_size) // 2
-        img.paste(avatar, (offset, offset), mask)
+        # تحديد تاريخ الانتهاء بناءً على المدة المطلوبة
+        if duration_type == "year":
+            try:
+                target_date = start_date.replace(year=start_date.year + 1)
+            except ValueError:
+                target_date = start_date + timedelta(days=365)
+            period_name = "سنة"
+        elif duration_type == "month":
+            target_date = start_date + timedelta(days=30)
+            period_name = "شهر"
+        elif duration_type == "months":
+            target_date = start_date + timedelta(days=90)
+            period_name = "ثلاثة أشهر"
+        else:
+            return
 
-    buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    buffer.seek(0)
-    return buffer
-
-@bot.command(name="روليت")
-async def roulette_game(ctx):
-    if not check_admin(ctx):
-        return await ctx.send("ليس لديك رول الإدارة المخصص لاستخدام هذا الأمر.", delete_after=5)
-    
-    session = RouletteGameSession(ctx)
-    view = RouletteMainView(session)
-    
-    embed = discord.Embed(title="روليت", description="عدد اللاعبين: 0/50\nستبدأ اللعبة خلال 43 ثانية...", color=0x000000)
-    msg = await ctx.send(embed=embed, view=view)
-    
-    for remaining in range(43, 0, -1):
-        embed.description = f"عدد اللاعبين: {len(session.players)}/50\nستبدأ اللعبة خلال {remaining} seconds ..."
-        try:
-            await msg.edit(embed=embed)
-        except:
-            pass
-        await asyncio.sleep(1)
+        now = datetime.now()
+        remaining = target_date - now
         
-    if len(session.players) < 2:
-        return await ctx.send("❌ تم إلغاء الروليت لعدم اكتمال عدد اللاعبين.")
-    
-    await ctx.send("بدأ التحدي وتصفيات الروليت!")
-    active_players = list(session.players)
-    
-    while len(active_players) > 1:
-        attacker = random.choice(active_players)
-        targets = [p for p in active_players if p != attacker]
-        if not targets:
-            break
-        victim = random.choice(targets)
-        
-        try:
-            avatar_bytes = await victim.display_avatar.read()
-        except:
-            avatar_bytes = None
+        if remaining.total_seconds() <= 0:
+            await ctx.send(f"انتهت مدة اشتراك النيترو ({period_name}) الخاص بك بالفعل! ⏳")
+            return
             
-        wheel_buffer = generate_roulette_image(active_players, avatar_bytes)
-        file = discord.File(wheel_buffer, filename="roulette.png")
-        await ctx.send(file=file)
+        days = remaining.days
+        weeks = days // 7
+        remaining_days = days % 7
+        hours = remaining.seconds // 3600
         
-        v_inv = user_inventory.setdefault(victim.id, {"bomb": 0, "shield": 0, "attack": 0})
-        if v_inv["shield"] > 0:
-            v_inv["shield"] -= 1
-            await ctx.send(f"درع الحماية أنقذ {victim.mention}!")
-            continue
+        time_text = []
+        if weeks > 0:
+            time_text.append(f"{weeks} أسبوع")
+        if remaining_days > 0:
+            time_text.append(f"{remaining_days} يوم")
+        if hours > 0:
+            time_text.append(f"{hours} ساعة")
             
-        if v_inv["attack"] > 0:
-            v_inv["attack"] -= 1
-            active_players.remove(attacker)
-            await ctx.send(f"انعكس الهجوم وانطرد {attacker.mention}!")
-            continue
-            
-        active_players.remove(victim)
-        await ctx.send(f"تم استبعاد {victim.mention} من الجولة.")
-        await asyncio.sleep(2)
-        
-    winner = active_players[0]
-    win_embed = discord.Embed(title="🏆 الفائز في الروليت!", description=f"مبروك الفوز يا {winner.mention}!", color=0xffd700)
-    win_embed.set_image(url=winner.display_avatar.url)
-    await ctx.send(embed=win_embed)
+        result_str = " و ".join(time_text) if time_text else "أقل من ساعة"
+        await ctx.send(f"⏳ **{ctx.author.mention}، المتبقي حتى انتهاء اشتراك ({period_name}):** {result_str}")
+    except Exception as e:
+        await ctx.send(f"حدث خطأ أثناء حساب التاريخ: {e}", delete_after=5)
 
-# ==================== تشغيل البوت ====================
+# 4. أوامر النيترو
+@bot.command(name="نيترو")
+async def nitro_group(ctx, sub_command: str = None, *, args=None):
+    if sub_command == "سنه":
+        await calculate_nitro_time(ctx, "year")
+    elif sub_command == "شهر":
+        await calculate_nitro_time(ctx, "month")
+    elif sub_command == "شهور":
+        await calculate_nitro_time(ctx, "months")
+    else:
+        await ctx.send("يرجى تحديد النوع بشكل صحيح:\n`!نيترو سنه`\n`!نيترو شهر`\n`!نيترو شهور`", delete_after=7)
+
+# 5. أوامر مسح الرسائل (مربوطة بالرولات الجديدة)
+@bot.command(name="مسح_فعلي")
+@has_clear_role()
+async def clear_messages(ctx, count: int = 10):
+    if count < 1 or count > 100:
+        await ctx.send("يرجى اختيار عدد بين 1 و 100.", delete_after=5)
+        return
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
+    deleted = await ctx.channel.purge(limit=count)
+    msg = await ctx.send(f"تم مسح {len(deleted)} رسالة.")
+    await msg.delete(delay=3)
+
+@bot.command(name="مسح")
+@has_clear_role()
+async def clear_alias(ctx, count: int = 10):
+    await clear_messages(ctx, count)
+
+@clear_messages.error
+async def clear_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.send("عذراً، هذا الأمر مخصص فقط للأشخاص الذين يحملون الرولات المعتمدة لمسح الرسائل.", delete_after=5)
+
 if __name__ == "__main__":
     keep_alive()
-    TOKEN = os.getenv("DISCORD_TOKEN")
-    if not TOKEN:
-        print("خطأ: يرجى تعيين رمز البوت (DISCORD_TOKEN) في بيئة التشغيل.")
-    else:
-        bot.run(TOKEN)
+    bot.run(os.getenv("DISCORD_TOKEN"))
