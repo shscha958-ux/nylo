@@ -78,7 +78,20 @@ async def like(ctx, emoji: str = "👍"):
     await ctx.send(f"تعذر إضافة التفاعل: {e}")
 
 
-# --- 4. أمر البروفايل والتقييم (!تقيم) ---
+# --- 4. أمر مسح الرسائل (!مسح) ---
+
+
+@bot.command(name="مسح")
+@commands.has_permissions(manage_messages=True)
+async def clear(ctx, amount: int = 5):
+  await ctx.message.delete()
+  deleted = await ctx.channel.purge(limit=amount)
+  msg = await ctx.send(f"تم مسح {len(deleted)} رسالة بنجاح.")
+  await asyncio.sleep(3)
+  await msg.delete()
+
+
+# --- 5. أمر البروفايل والتقييم (!تقيم) ---
 
 
 @bot.command(name="تقيم")
@@ -157,7 +170,7 @@ async def rate_profile(ctx, member: discord.Member = None):
   await loading_msg.delete()
 
 
-# --- 5. نظام الروليت ومتجر الأدوات (!روليت) ---
+# --- 6. نظام الروليت ومتجر الأدوات (!روليت) ---
 
 
 class RouletteShopView(discord.ui.View):
@@ -465,49 +478,82 @@ async def roulette(ctx):
   await loading_msg.delete()
 
 
-# --- 6. أمر الإسكات والميوت (!اسكت) ---
+# --- 7. أمر الميوت المطور بنظام الأزرار (!ميوت) ---
 
 
 class MuteCancelView(discord.ui.View):
 
-  def __init__(self, member: discord.Member):
+  def __init__(self, member: discord.Member, mute_role: discord.Role = None):
     super().__init__(timeout=None)
     self.member = member
+    self.mute_role = mute_role
 
-  @discord.ui.button(label="إلغاء", style=discord.ButtonStyle.red)
+  @discord.ui.button(label="إلغاء الميوت", style=discord.ButtonStyle.red)
   async def cancel_mute(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
     try:
-      await self.member.timeout(None, reason="تم إلغاء الميوت")
+      # رفع الميوت الكتابي (التايم آوت)
+      await self.member.timeout(None, reason="تم إلغاء الميوت بواسطة المشرف")
+      # إزالة رتبة الميوت إذا تم إضافتها
+      if self.mute_role and self.mute_role in self.member.roles:
+        await self.member.remove_roles(self.mute_role)
+      # إلغاء الميوت الصوتي إذا كان متصلاً بالروم
+      if self.member.voice:
+        await self.member.edit(mute=False, reason="إلغاء الميوت الصوتي")
+
       for child in self.children:
         child.disabled = True
       await interaction.response.edit_message(
-          content=f"تم إلغاء الميوت عن {self.member.mention}", view=self
+          content=f"تم إلغاء الميوت عن {self.member.mention} بنجاح.", view=self
       )
     except Exception as e:
       await interaction.response.send_message(
-          f"حدث خطأ: {str(e)}", ephemeral=True
+          f"حدث خطأ أثناء إلغاء الميوت: {str(e)}", ephemeral=True
       )
 
 
-@bot.command(name="اسكت")
+@bot.command(name="ميوت")
 @commands.has_permissions(moderate_members=True)
-async def mute_member(ctx, member: discord.Member, minutes: int = 5):
+async def mute_member(
+    ctx,
+    member: discord.Member,
+    minutes: int = 5,
+    mute_role: discord.Role = None,
+):
   try:
     duration = datetime.timedelta(minutes=minutes)
+
+    # 1. الميوت الكتابي (تايم آوت)
     await member.timeout(
         duration, reason=f"بواسطة الأمر من قِبل {ctx.author}"
     )
-    view = MuteCancelView(member)
+
+    # 2. الميوت الصوتي (إذا كان في روم صوتي)
+    voice_status = ""
+    if member.voice:
+      await member.edit(
+          mute=True, reason=f"ميوت صوتي بواسطة {ctx.author.display_name}"
+      )
+      voice_status = " وإسكاته صوتياً"
+
+    # 3. إعطاء رتبة الميوت (الرول) إذا تم تحديدها
+    role_status = ""
+    if mute_role:
+      await member.add_roles(
+          mute_role, reason=f"إضافة رتبة الميوت بواسطة {ctx.author}"
+      )
+      role_status = f" مع إعطاؤه رتبة ({mute_role.name})"
+
+    view = MuteCancelView(member, mute_role)
     msg = (
-        f"تم إخراس العضو {member.mention} لمدة {minutes} دقائق. اضغط على زر إلغاء"
-        " لإلغاء الميوت."
+        f"تم إخراس العضو {member.mention} لمدة {minutes} دقائق{voice_status}"
+        f"{role_status}. اضغط على زر إلغاء الميوت أدناه لإلغائه."
     )
     await ctx.send(msg, view=view)
   except Exception as e:
     await ctx.send(f"تعذر تطبيق الميوت: {e}")
 
 
-# --- 7. تشغيل البوت ---
+# --- 8. تشغيل البوت ---
 bot.run(os.environ.get("TOKEN"))
