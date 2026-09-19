@@ -12,7 +12,6 @@ from threading import Thread
 import yt_dlp
 import random
 
-# إعداد خادم الويب للحفاظ على نشاط البوت 24/7
 app = Flask('')
 
 @app.route('/')
@@ -54,7 +53,6 @@ def save_json(filename, data):
 async def on_ready():
     print(f"تم تسجيل الدخول بنجاح باسم: {bot.user.name}")
 
-# دالة توليد بطاقة البروفايل
 async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes):
     avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
     banner_img = Image.open(io.BytesIO(banner_bytes)).convert("RGBA")
@@ -101,15 +99,13 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes):
     output.seek(0)
     return output
 
-# مساعدة لاحتساب الأشهر بدقة تقويمية
 def add_months(sourcedate, months):
     month = sourcedate.month - 1 + months
     year = sourcedate.year + month // 12
     month = month % 12 + 1
-    day = min(sourcedate.day, [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month-1])
+    days_in_month = [31, 29 if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    day = min(sourcedate.day, days_in_month[month-1])
     return sourcedate.replace(year=year, month=month, day=day)
-
-# ==================== 1. نظام النيترو والتواريخ ====================
 @bot.group(name="نيترو", invoke_without_command=True)
 async def nitro(ctx, member: discord.Member = None):
     target_member = member or ctx.author
@@ -207,7 +203,6 @@ async def nitro_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("عذراً، لا تمتلك الرول المطلوب لاستخدام هذا الأمر.", delete_after=5)
 
-# ==================== 2. أمر النشر ====================
 @bot.command(name="نشر")
 @commands.has_any_role(1513635397568303174, 1550705477485068348)
 async def nashar(ctx):
@@ -250,7 +245,6 @@ async def nashar_error(ctx, error):
     if isinstance(error, commands.MissingAnyRole):
         await ctx.send("عذراً، لا تمتلك الرول المطلوب لاستخدام أمر النشر.", delete_after=5)
 
-# ==================== 3. أمر المسح ====================
 @bot.command(name="مسح")
 @commands.has_any_role(1513635397568303174, 1550710745183035483)
 async def clear_messages(ctx, count: int = 10):
@@ -270,5 +264,318 @@ async def clear_error(ctx, error):
     if isinstance(error, commands.MissingAnyRole):
         await ctx.send("عذراً، لا تمتلك الرول المطلوب لمسح الرسائل.", delete_after=5)
 
-# ==================== 4. توزيع النقاط (-n) ====================
-@bot.command(name="n"
+@bot.command(name="n")
+@commands.has_any_role(1550711376995950592, 1513635397568303174, 1513655552700317926)
+async def distribute_points(ctx, points: int, member: discord.Member):
+    points_data = load_json(POINTS_FILE)
+    user_id = str(member.id)
+    current_points = points_data.get(user_id, 0)
+    points_data[user_id] = current_points + points
+    save_json(POINTS_FILE, points_data)
+    await ctx.send(f"✅ تم إضافة `{points}` نقطة لـ {member.mention}. رصيده الحالي: `{points_data[user_id]}` نقطة.")
+
+@distribute_points.error
+async def distribute_points_error(ctx, error):
+    if isinstance(error, commands.MissingAnyRole):
+        await ctx.send("عذراً، لا تمتلك الصلاحية لتوزيع النقاط.", delete_after=5)
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("الاستخدام الصحيح: `-n <النقاط> @العضو`", delete_after=5)
+class RouletteJoinView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=30)
+        self.players = []
+
+    @discord.ui.button(label="انضمام للروليت 🎲", style=discord.ButtonStyle.green)
+    async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user in self.players:
+            await interaction.response.send_message("أنت منضم بالفعل!", ephemeral=True)
+        else:
+            self.players.append(interaction.user)
+            await interaction.response.send_message("✅ تم انضمامك للروليت بنجاح!", ephemeral=True)
+
+@bot.command(name="روليت")
+@commands.has_any_role(1550711376995950592, 1513635397568303174)
+async def roulette_game(ctx):
+    view = RouletteJoinView()
+    msg = await ctx.send("🎮 **بدأت لعبة الروليت التفاعلية!** اضغط على الزر أدناه للانضمام (الوقت المتبقي: 30 ثانية):", view=view)
+    
+    await asyncio.sleep(30)
+    
+    for child in view.children:
+        child.disabled = True
+    try:
+        await msg.edit(view=view)
+    except Exception:
+        pass
+
+    players = view.players
+    if len(players) < 2:
+        await ctx.send("❌ لا يوجد عدد كافٍ من اللاعبين لبدء الروليت (يجب أن يكونوا 2 على الأقل).")
+        return
+
+    await ctx.send(f"🎲 **بدأت المعركة بين {len(players)} لاعبين!** سيتناوبون على طرد بعضهم البعض حتى يبقى فائز واحد.")
+    
+    while len(players) > 1:
+        current_player = players[0]
+        
+        class EliminateSelect(discord.ui.Select):
+            def __init__(self):
+                opts = [discord.SelectOption(label=p.display_name, value=str(p.id)) for p in players if p.id != current_player.id]
+                super().__init__(placeholder=f"دور {current_player.display_name} - اختر شخصاً لطرده", options=opts)
+            
+            async def callback(self, interaction: discord.Interaction):
+                if interaction.user.id != current_player.id:
+                    await interaction.response.send_message("❌ ليس دورك الآن!", ephemeral=True)
+                    return
+                target_id = int(self.values[0])
+                target = discord.utils.get(players, id=target_id)
+                if target:
+                    players.remove(target)
+                    self.view.selected_target = target
+                    await interaction.response.send_message(f"❌ قام {current_player.mention} بطرد {target.mention} من اللعبة! 🚪", ephemeral=False)
+                    self.view.stop()
+
+        class EliminateView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=25)
+                self.selected_target = None
+                self.add_item(EliminateSelect())
+            
+            async def on_timeout(self):
+                self.selected_target = None
+                self.stop()
+
+        elim_view = EliminateView()
+        await ctx.send(f"⏳ دور اللاعب {current_player.mention}: لديك 25 ثانية لاختيار شخص لطرده!", view=elim_view)
+        
+        await elim_view.wait()
+        
+        if elim_view.selected_target is None and current_player in players:
+            other_players = [p for p in players if p.id != current_player.id]
+            if other_players:
+                eliminated = random.choice(other_players)
+                players.remove(eliminated)
+                await ctx.send(f"⏰ انتهى وقت {current_player.mention}! تم طرد {eliminated.mention} تلقائياً.")
+        
+        if current_player in players:
+            players.append(players.pop(0))
+        
+        await asyncio.sleep(2)
+
+    winner = players[0]
+    points_data = load_json(POINTS_FILE)
+    w_id = str(winner.id)
+    points_data[w_id] = points_data.get(w_id, 0) + 50
+    save_json(POINTS_FILE, points_data)
+
+    await ctx.send(f"👑 **انتهت اللعبة! الفائز الأخير هو {winner.mention}** وحصل على 50 نقطة 🎉")
+
+@roulette_game.error
+async def roulette_error(ctx, error):
+    if isinstance(error, commands.MissingAnyRole):
+        await ctx.send("عذراً، لا تمتلك الرول المطلوب لبدء الروليت.", delete_after=5)
+class MuteReasonSelect(discord.ui.Select):
+    def __init__(self, member: discord.Member):
+        self.target_member = member
+        options = [
+            discord.SelectOption(label="سبب مشاكل", description="ميوت لمدة 15 دقيقة", emoji="⚠️", value="15"),
+            discord.SelectOption(label="طاري اهل", description="ميوت لمدة 40 دقيقة", emoji="🚫", value="40"),
+            discord.SelectOption(label="سب", description="ميوت لمدة 64 دقيقة", emoji="🛑", value="64"),
+            discord.SelectOption(label="قذف", description="ميوت لمدة 120 دقيقة", emoji="⏳", value="120")
+        ]
+        super().__init__(placeholder="اختر سبب الاسكات...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        minutes = int(self.values[0])
+        reason = [o.label for o in self.options if o.value == self.values[0]][0]
+        
+        try:
+            duration = timedelta(minutes=minutes)
+            await self.target_member.timeout(duration, reason=reason)
+            await interaction.response.send_message(f"✅ تم إسكات {self.target_member.mention} لمدة {minutes} دقيقة بسبب: **{reason}**", ephemeral=False)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ حدث خطأ أثناء تطبيق الإسكات: {e}", ephemeral=True)
+
+class MuteReasonView(discord.ui.View):
+    def __init__(self, member: discord.Member):
+        super().__init__(timeout=60)
+        self.add_item(MuteReasonSelect(member))
+
+@bot.command(name="اسكت")
+@commands.has_any_role(1550711376995950592, 1513655552700317926, 1513655846968496128, 1513655977931702322)
+async def askat(ctx, member: discord.Member):
+    view = MuteReasonView(member)
+    await ctx.send(f"اختر سبب إسكات العضو {member.mention}:", view=view)
+
+@askat.error
+async def askat_error(ctx, error):
+    if isinstance(error, commands.MissingAnyRole):
+        await ctx.send("عذراً، لا تمتلك الصلاحية لاستخدام أمر `!اسكت`.", delete_after=5)
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("الاستخدام الصحيح: `!اسكت @العضو`", delete_after=5)
+
+@bot.command(name="تكلم")
+@commands.has_any_role(1513655977931702322, 1513635397568303174, 1513655846968496128, 1550711376995950592, 1513655552700317926)
+async def talk(ctx, member: discord.Member):
+    try:
+        await member.timeout(None, reason="فك الاسكات بواسطة المشرف")
+        await ctx.send(f"✅ تم فك الإسكات عن {member.mention} بنجاح.")
+    except Exception as e:
+        await ctx.send(f"❌ حدث خطأ: {e}", delete_after=5)
+
+@talk.error
+async def talk_error(ctx, error):
+    if isinstance(error, commands.MissingAnyRole):
+        await ctx.send("عذراً، لا تمتلك الصلاحية لاستخدام أمر `!تكلم`.", delete_after=5)
+
+class VoiceMuteReasonSelect(discord.ui.Select):
+    def __init__(self, member: discord.Member):
+        self.target_member = member
+        options = [
+            discord.SelectOption(label="سبب مشاكل", description="ميوت صوتي", emoji="⚠️", value="سبب مشاكل"),
+            discord.SelectOption(label="طاري اهل", description="ميوت صوتي", emoji="🚫", value="طاري اهل"),
+            discord.SelectOption(label="سب", description="ميوت صوتي", emoji="🛑", value="سب"),
+            discord.SelectOption(label="قذف", description="ميوت صوتي", emoji="⏳", value="قذف")
+        ]
+        super().__init__(placeholder="اختر سبب الميوت الصوتي...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        reason = self.values[0]
+        if not self.target_member.voice or not self.target_member.voice.channel:
+            await interaction.response.send_message(f"❌ العضو {self.target_member.mention} ليس في روم صوتي.", ephemeral=True)
+            return
+        try:
+            await self.target_member.edit(mute=True, reason=reason)
+            await interaction.response.send_message(f"✅ تم عمل ميوت صوتي لـ {self.target_member.mention} بسبب: **{reason}**", ephemeral=False)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ حدث خطأ أثناء تطبيق الميوت الصوتي: {e}", ephemeral=True)
+
+class VoiceMuteReasonView(discord.ui.View):
+    def __init__(self, member: discord.Member):
+        super().__init__(timeout=60)
+        self.add_item(VoiceMuteReasonSelect(member))
+
+@bot.command(name="ميوت")
+@commands.has_any_role(1513655977931702322, 1513655846968496128, 1513635397568303174, 1513655552700317926)
+async def voice_mute(ctx, member: discord.Member):
+    view = VoiceMuteReasonView(member)
+    await ctx.send(f"اختر سبب الميوت الصوتي للعضو {member.mention}:", view=view)
+
+@voice_mute.error
+async def voice_mute_error(ctx, error):
+    if isinstance(error, commands.MissingAnyRole):
+        await ctx.send("عذراً، لا تمتلك الصلاحية للميوت الصوتي.", delete_after=5)
+
+@bot.command(name="فك")
+@commands.has_any_role(1513655552700317926, 1513635397568303174, 1513655846968496128, 1513655977931702322)
+async def voice_unmute(ctx, member: discord.Member):
+    if not member.voice or not member.voice.channel:
+        await ctx.send(f"❌ العضو {member.mention} ليس في روم صوتي.", delete_after=5)
+        return
+    try:
+        await member.edit(mute=False, reason="فك الميوت الصوتي بواسطة المشرف")
+        await ctx.send(f"✅ تم فك الميوت الصوتي عن {member.mention}")
+    except Exception as e:
+        await ctx.send(f"❌ حدث خطأ: {e}", delete_after=5)
+
+@voice_unmute.error
+async def voice_unmute_error(ctx, error):
+    if isinstance(error, commands.MissingAnyRole):
+        await ctx.send("عذراً، لا تمتلك الصلاحية لفك الميوت الصوتي.", delete_after=5)
+
+@bot.command(name="سحب")
+async def drag_member(ctx, member: discord.Member):
+    if not ctx.author.voice or not ctx.author.voice.channel:
+        await ctx.send("❌ يجب أن تكون في روم صوتي لتتمكن من سحب الأعضاء.", delete_after=5)
+        return
+    if not member.voice or not member.voice.channel:
+        await ctx.send(f"❌ العضو {member.mention} ليس في أي روم صوتي.", delete_after=5)
+        return
+    
+    target_channel = ctx.author.voice.channel
+    try:
+        await member.move_to(target_channel, reason=f"سحب بواسطة {ctx.author}")
+        await ctx.send(f"✅ تم سحب {member.mention} إلى رومك الصوتي بنجاح.")
+    except Exception as e:
+        await ctx.send(f"❌ حدث خطأ أثناء السحب: {e}", delete_after=5)
+@bot.command(name="ش")
+async def play_music(ctx, *, query: str):
+    if not ctx.author.voice or not ctx.author.voice.channel:
+        await ctx.send("❌ يجب أن تكون متصلاً بروم صوتي لتشغيل الأغاني.", delete_after=5)
+        return
+
+    voice_channel = ctx.author.voice.channel
+    if ctx.voice_client is None:
+        try:
+            vc = await voice_channel.connect()
+        except Exception as e:
+            await ctx.send(f"❌ لم أتمكن من الاتصال بالروم: {e}", delete_after=5)
+            return
+    else:
+        vc = ctx.voice_client
+
+    await ctx.send(f"🔍 جاري البحث والتشغيل لـ: `{query}` ...")
+
+    ydl_opts = {'format': 'bestaudio', 'noplaylist': True}
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"ytsearch:{query}", download=False)
+            if 'entries' in info:
+                info = info['entries'][0]
+            url = info['url']
+            title = info.get('title', 'أغنية')
+
+        FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
+        source = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS)
+        
+        if vc.is_playing():
+            vc.stop()
+            
+        vc.play(source, after=lambda e: print(f'Player error: {e}') if e else None)
+        await ctx.send(f"🎶 يتم الآن تشغيل: **{title}**")
+    except Exception as e:
+        await ctx.send(f"❌ حدث خطأ أثناء تشغيل الأغنية: {e}", delete_after=5)
+
+@bot.command(name="لايك")
+@commands.has_role(1513635397568303174)
+async def set_like_emoji(ctx, emoji: str):
+    settings = load_json(SETTINGS_FILE)
+    settings["like_emoji"] = emoji
+    save_json(SETTINGS_FILE, settings)
+    await ctx.send(f"✅ تم تحديث إيموجي التقييم/اللايك إلى: {emoji}")
+
+@set_like_emoji.error
+async def set_like_emoji_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("عذراً، لا تمتلك الصلاحية لتغيير إيموجي اللايك.", delete_after=5)
+
+@bot.command(name="تقيم")
+async def rate_profile(ctx):
+    user = ctx.author
+    avatar_asset = user.display_avatar.with_size(512)
+    avatar_bytes = await avatar_asset.read()
+    
+    banner_bytes = avatar_bytes
+    if user.banner:
+        banner_asset = user.banner.with_size(512)
+        banner_bytes = await banner_asset.read()
+
+    card_io = await generate_profile_card(avatar_bytes, banner_bytes)
+    
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
+
+    file = discord.File(card_io, filename="profile_rating.png")
+    sent_msg = await ctx.send(file=file)
+
+    settings = load_json(SETTINGS_FILE)
+    emoji = settings.get("like_emoji", "❤️")
+    try:
+        await sent_msg.add_reaction(emoji)
+    except Exception:
+        pass
+
+keep_alive()
+bot.run(os.getenv("DISCORD_TOKEN"))
