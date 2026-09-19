@@ -196,7 +196,7 @@ async def nitro_timer(ctx):
 
 @bot.command(name="مسح_فعلي")
 @commands.has_permissions(manage_messages=True)
-async def clear_messages(ctx, count: int, 10):
+async def clear_messages(ctx, count: int = 10):
     if count < 1 or count > 100:
         await ctx.send("يرجى اختيار عدد بين 1 و 100.", delete_after=5)
         return
