@@ -70,7 +70,7 @@ def save_json(filename, data):
 
 @bot.event
 async def on_ready():
-    print(f"تم تسجيل الدخول بنجاح باسم: {bot.user.name}")
+    print(f"Bot logged in successfully as: {bot.user.name}")
 
 # ==================== نظام النيترو وتواريخه ====================
 @bot.command(name="ضبط")
@@ -87,7 +87,7 @@ async def set_nitro_dynamic(ctx, member: discord.Member, period_type: str, date_
             continue
             
     if not parsed_date:
-        await ctx.send("خطأ في صيغة التاريخ. استخدم: `YYYY-MM-DD` أو `DD-MM-YYYY`", delete_after=7)
+        await ctx.send("خطأ في صيغة التاريخ. استخدم: YYYY-MM-DD", delete_after=7)
         return
 
     target_date = parsed_date
@@ -100,14 +100,14 @@ async def set_nitro_dynamic(ctx, member: discord.Member, period_type: str, date_
     elif "شهر" in period_lower or "month" in period_lower:
         target_date = parsed_date + timedelta(days=30)
     else:
-        await ctx.send("يرجى تحديد نوع المدة بشكل صحيح: `سنة` ، `شهر` ، أو `شهور`.", delete_after=7)
+        await ctx.send("يرجى تحديد المدة بشكل صحيح: سنة ، شهر ، أو شهور.", delete_after=7)
         return
 
     data = load_json(DATA_FILE)
     data[str(member.id)] = target_date.strftime("%Y-%m-%d")
     save_json(DATA_FILE, data)
     
-    await ctx.send(f"✅ تم ضبط نيترو ({period_type}) للعضو {member.mention} لينتهي بتاريخ: `{target_date.strftime('%Y-%m-%d')}`")
+    await ctx.send(f"تم ضبط نيترو ({period_type}) للعضو {member.mention} لينتهي بتاريخ: {target_date.strftime('%Y-%m-%d')}")
 
 @bot.command(name="نيترو")
 async def check_nitro(ctx, sub_type: str = "شهر"):
@@ -115,7 +115,7 @@ async def check_nitro(ctx, sub_type: str = "شهر"):
     user_id = str(ctx.author.id)
     
     if user_id not in data:
-        await ctx.send("عذراً، ليس لديك تاريخ نيترو مسجل من قبل الإدارة.", delete_after=6)
+        await ctx.send("عذراً، ليس لديك تاريخ نيترو مسجل.", delete_after=6)
         return
         
     target = datetime.strptime(data[user_id], "%Y-%m-%d")
@@ -123,10 +123,10 @@ async def check_nitro(ctx, sub_type: str = "شهر"):
     remaining = target - now
     
     if remaining.total_seconds() <= 0:
-        await ctx.send("انتهت مدة اشتراك النيترو الخاص بك بالفعل! ⏳")
+        await ctx.send("انتهت مدة اشتراك النيترو الخاص بك!")
         return
         
-    await ctx.send(f"⏳ **{ctx.author.mention}، المتبقي لانتهاء اشتراك النيترو:** `{remaining.days} يوم` و `{remaining.seconds // 3600} ساعة`.")
+    await ctx.send(f"المتبقي لانتهاء اشتراك النيترو: {remaining.days} يوم و {remaining.seconds // 3600} ساعة.")
 
 # ==================== نظام النشر وبطاقة البروفايل ====================
 async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes):
@@ -205,7 +205,7 @@ async def clear_msgs(ctx, count: int = 10):
     except:
         pass
     deleted = await ctx.channel.purge(limit=count)
-    await ctx.send(f"تم مسح {len(deleted)} رسالة بنجاح.", delete_after=3)
+    await ctx.send(f"تم مسح {len(deleted)} رسالة.", delete_after=3)
 
 # ==================== نظام النقاط والـ -n ====================
 @bot.command(name="n")
@@ -218,7 +218,7 @@ async def manage_points(ctx, amount: int, member: discord.Member = None):
     uid = str(member.id)
     points_data[uid] = points_data.get(uid, 0) + amount
     save_json(POINTS_FILE, points_data)
-    await ctx.send(f"✨ تم تحديث نقاط العضو {member.mention} بمقدار `{amount}`. مجموع نقاطه الحالية: `{points_data[uid]}`")
+    await ctx.send(f"تم تحديث نقاط العضو {member.mention} بمقدار {amount}. مجموع نقاطه: {points_data[uid]}")
 
 # ==================== لعبة الروليت ====================
 @bot.command(name="روليت")
@@ -230,10 +230,10 @@ async def roulette_game(ctx):
         
     members = ctx.author.voice.channel.members
     if len(members) < 2:
-        await ctx.send("يجب أن يتواجد شخصان على الأقل في الروم الصوتي لبدء اللعبة.", delete_after=5)
+        await ctx.send("يجب تواجد شخصين على الأقل في الروم الصوتي.", delete_after=5)
         return
 
-    await ctx.send("🎲 بدأت لعبة الروليت الصوتي! يتم الآن اختيار شخص عشوائي للطرد حتى يتبقى الفائز الأخير...")
+    await ctx.send("بدأت لعبة الروليت الصوتي! يتم اختيار شخص عشوائي للطرد حتى يتبقى الفائز الأخير...")
     game_members = list(members)
     
     while len(game_members) > 1:
@@ -250,7 +250,7 @@ async def roulette_game(ctx):
     points_data = load_json(POINTS_FILE)
     points_data[str(winner.id)] = points_data.get(str(winner.id), 0) + 50
     save_json(POINTS_FILE, points_data)
-    await ctx.send(f"🏆 مبروك للفائز بالروليت {winner.mention}! حصل على 50 نقطة.")
+    await ctx.send(f"مبروك للفائز بالروليت {winner.mention}! حصل على 50 نقطة.")
 
 # ==================== نظام الاسكات والميوت بالأسباب ====================
 REASONS_MAPPING = {
@@ -261,4 +261,6 @@ REASONS_MAPPING = {
 
 @bot.command(name="اسكت")
 @has_any_role("askat")
-async def mute_chat(ctx, member: discord.Mem
+async def mute_chat(ctx, member: discord.Member, choice: str = None):
+    if not choice or choice not in REASONS_MAPPING:
+        options_text = "\n".join([f"**{k}** - {v[0]} (
