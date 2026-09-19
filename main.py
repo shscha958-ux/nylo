@@ -3,13 +3,13 @@ import json
 import os
 import aiohttp
 from datetime import datetime
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import discord
 from discord.ext import commands
 from flask import Flask
 from threading import Thread
 
-# إعداد خادم الويب الوهمي لمنع البوت من الانطفاء
+# إعداد خادم الويب الوهمي لمنع البوت من الانطفاء وحفظ النشاط 24/7
 app = Flask('')
 
 @app.route('/')
@@ -48,14 +48,14 @@ def save_data(data):
 async def on_ready():
     print(f"تم تسجيل الدخول بنجاح باسم: {bot.user.name}")
 
-async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, display_name: str, username: str):
+async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes):
     avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
     banner_img = Image.open(io.BytesIO(banner_bytes)).convert("RGBA")
 
     scale = 2
     card_width = 600 * scale
     banner_height = 220 * scale
-    card_height = 340 * scale
+    card_height = 320 * scale
     
     avatar_inner_size = 140 * scale
     border_thickness = 8 * scale
@@ -89,61 +89,36 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, displa
     avatar_inner_y = avatar_outer_y + border_thickness
     card.paste(avatar_img, (avatar_inner_x, avatar_inner_y), avatar_mask)
 
-    draw = ImageDraw.Draw(card)
-    
-    try:
-        font_name = ImageFont.truetype("arial.ttf", 26 * scale)
-        font_username = ImageFont.truetype("arial.ttf", 18 * scale)
-    except IOError:
-        font_name = ImageFont.load_default()
-        font_username = ImageFont.load_default()
-
-    text_x = avatar_outer_x + avatar_outer_size + (20 * scale)
-    text_y = avatar_outer_y + (30 * scale)
-
-    draw.text((text_x, text_y), display_name, fill=(255, 255, 255, 255), font=font_name)
-    draw.text((text_x, text_y + (38 * scale)), f"@{username}", fill=(170, 170, 170, 255), font=font_username)
-
     output = io.BytesIO()
     card.save(output, format="PNG")
     output.seek(0)
     return output
 
 class ProfileCardView(discord.ui.View):
-    def __init__(self, banner_bytes: bytes):
+    def __init__(self, avatar_bytes: bytes, banner_bytes: bytes):
         super().__init__(timeout=None)
+        self.avatar_bytes = avatar_bytes
         self.banner_bytes = banner_bytes
 
     @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary)
     async def br_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
-        try:
-            avatar_asset = interaction.user.display_avatar.with_size(256)
-            avatar_bytes = await avatar_asset.read()
-            
-            display_name = interaction.user.display_name
-            username = interaction.user.name
-            
-            card_io = await generate_profile_card(
-                avatar_bytes, 
-                self.banner_bytes, 
-                display_name, 
-                username
-            )
-            file_to_send = discord.File(card_io, filename="discord_profile.png")
-            await interaction.followup.send(file=file_to_send, ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"حدث خطأ أثناء إنشاء البطاقة: {e}", ephemeral=True)
+        card_io = await generate_profile_card(self.avatar_bytes, self.banner_bytes)
+        file_to_send = discord.File(card_io, filename="discord_profile.png")
+        await interaction.followup.send(file=file_to_send, ephemeral=True)
 
-# 1. أمر النشر
 @bot.command(name="نشر")
 @commands.has_role(1513635397568303174)
 async def nashar(ctx):
     if len(ctx.message.attachments) < 1:
-        await ctx.send("يرجى إرفاق صورة البنر مع الأمر.", delete_after=6)
+        await ctx.send("يرجى إرفاق صورة (أو صورتين: الأفاتار والبنر) مع الأمر.", delete_after=6)
         return
 
-    banner_attachment = ctx.message.attachments[0]
+    attachments = ctx.message.attachments
+    avatar_attachment = attachments[0]
+    banner_attachment = attachments[1] if len(attachments) > 1 else attachments[0]
+
+    avatar_bytes = await avatar_attachment.read()
     banner_bytes = await banner_attachment.read()
 
     try:
@@ -151,10 +126,20 @@ async def nashar(ctx):
     except Exception:
         pass
 
-    view = ProfileCardView(banner_bytes)
-    await ctx.send("اضغط على الزر أدناه (Br) لإنشاء بطاقتك الشخصية:", view=view)
+    view = ProfileCardView(avatar_bytes, banner_bytes)
+    files_list = [discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")]
+    if len(attachments) > 1:
+        files_list.append(discord.File(io.BytesIO(banner_bytes), filename="banner.png"))
+        
+    await ctx.send(files=files_list, view=view)
 
-# 2. أمر ضبط النيترو
+@nashar.error
+async def nashar_error(ctx, error):
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("عذراً، لا تمتلك الرول المطلوب لاستخدام أمر النشر.", delete_after=5)
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("عذراً، ليس لديك الصلاحيات الكافية.", delete_after=5)
+
 @bot.command(name="ضبط_نيترو")
 @commands.has_role(1513635397568303174)
 async def set_nitro(ctx, member: discord.Member, target_date: str):
@@ -172,7 +157,6 @@ async def set_nitro_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("عذراً، هذا الأمر مخصص للمشرفين أصحاب الرول المخصص فقط.", delete_after=5)
 
-# 3. أمر نيترو
 @bot.command(name="نيترو")
 async def nitro_timer(ctx):
     data = load_data()
@@ -210,10 +194,9 @@ async def nitro_timer(ctx):
     except Exception:
         await ctx.send("حدث خطأ أثناء قراءة التاريخ.", delete_after=5)
 
-# 4. أوامر مسح الرسائل
 @bot.command(name="مسح_فعلي")
 @commands.has_permissions(manage_messages=True)
-async def clear_messages(ctx, count: int = 10):
+async def clear_messages(ctx, count: int, 10):
     if count < 1 or count > 100:
         await ctx.send("يرجى اختيار عدد بين 1 و 100.", delete_after=5)
         return
@@ -234,6 +217,6 @@ async def clear_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("عذراً، لا تمتلك صلاحية مسح الرسائل.", delete_after=5)
 
-# تشغيل خادم الحفاظ على النشاط والبوت بشكل مباشر
+# تشغيل نظام الحفاظ على النشاط والبوت معاً
 keep_alive()
 bot.run(os.getenv("DISCORD_TOKEN"))
