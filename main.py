@@ -63,7 +63,6 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, displa
     bg_color = (0, 0, 0, 255)
     card = Image.new("RGBA", (card_width, card_height), bg_color)
 
-    # إذا كان هناك بنر، يتم وضعه، وإذا لم يوجد تبقى الخلفية سوداء سادة تماماً
     if not is_solid_bg and banner_bytes:
         banner_img = Image.open(io.BytesIO(banner_bytes)).convert("RGBA")
         banner_img = banner_img.resize((card_width, banner_height), Image.Resampling.LANCZOS)
@@ -123,7 +122,6 @@ class ProfileCardView(discord.ui.View):
     async def br_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         try:
-            # استخدام الأفتار والبنر المحفوظين من رسالة النشر الأصلية
             card_io = await generate_profile_card(
                 self.avatar_bytes, 
                 self.banner_bytes, 
@@ -168,15 +166,18 @@ def has_clear_role():
         raise commands.MissingRole("رول مسح مطلوب")
     return commands.check(predicate)
 
-# 1. أمر النشر (يرسل الأفتار والبنر معاَ في رسالة واحدة مع زر Br)
+# 1. أمر النشر (يرسل الأفتار والبنر المرفقين بجانب بعضهما مع زر Br)
 @bot.command(name="نشر")
 @has_nashar_role()
 async def nashar(ctx):
-    if len(ctx.message.attachments) < 1:
-        await ctx.send("يرجى إرفاق صورة البنر مع الأمر.", delete_after=6)
+    if len(ctx.message.attachments) < 2:
+        await ctx.send("❌ يجب إرفاق **صورتين** مع الأمر:\n1. الصورة الأولى: **الأفتار**\n2. الصورة الثانية: **البنر**", delete_after=10)
         return
 
-    banner_attachment = ctx.message.attachments[0]
+    avatar_attachment = ctx.message.attachments[0]
+    banner_attachment = ctx.message.attachments[1]
+
+    avatar_bytes = await avatar_attachment.read()
     banner_bytes = await banner_attachment.read()
 
     try:
@@ -184,19 +185,10 @@ async def nashar(ctx):
     except Exception:
         pass
 
-    try:
-        # جلب أفتار الشخص الذي قام بكتابة أمر النشر
-        avatar_asset = ctx.author.display_avatar.with_size(256)
-        avatar_bytes = await avatar_asset.read()
-    except Exception as e:
-        await ctx.send(f"حدث خطأ أثناء جلب الأفتار: {e}", delete_after=5)
-        return
-
-    # إعداد الملفين ليتم إرسالهما معاً في رسالة واحدة (جنب بعض)
+    # إرسال الملفين معاً في نفس الرسالة (ديسكورد سيعرضهما بجانب بعضهما تماماً كما في صورتك)
     avatar_file = discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")
     banner_file = discord.File(io.BytesIO(banner_bytes), filename="banner.png")
     
-    # تمرير الأفتار، البنر، واسم صاحب الأمر لكي تظهر في القالب عند الضغط على زر Br
     view = ProfileCardView(avatar_bytes, banner_bytes, ctx.author.display_name, ctx.author.name)
     await ctx.send(files=[avatar_file, banner_file], view=view)
 
