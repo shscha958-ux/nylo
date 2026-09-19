@@ -47,8 +47,8 @@ def save_data(data):
 async def on_ready():
     print(f"تم تسجيل الدخول بنجاح باسم: {bot.user.name}")
 
-# دالة رسم وتصميم بطاقة البروفايل (إذا لم يكن هناك بنر، ستكون الخلفية العلوية سوداء سادة)
-async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes | None, display_name: str, username: str):
+# دالة رسم وتصميم بطاقة البروفايل
+async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, display_name: str, username: str, is_solid_bg: bool = False):
     avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
 
     scale = 2
@@ -63,11 +63,11 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes | None,
     bg_color = (0, 0, 0, 255)
     card = Image.new("RGBA", (card_width, card_height), bg_color)
 
-    if banner_bytes:
+    # إذا كان هناك بنر حقيقي، يتم وضعه في الأعلى، وإذا لم يوجد تبقى الخلفية سوداء سادة
+    if not is_solid_bg and banner_bytes:
         banner_img = Image.open(io.BytesIO(banner_bytes)).convert("RGBA")
         banner_img = banner_img.resize((card_width, banner_height), Image.Resampling.LANCZOS)
         card.paste(banner_img, (0, 0))
-    # إذا لم يكن هناك بنر، ستظل المساحة العلوية سوداء سادة تلقائياً
 
     def create_smooth_circle_mask(size):
         mask_scale = 4
@@ -112,7 +112,7 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes | None,
     return output
 
 class ProfileCardView(discord.ui.View):
-    def __init__(self, banner_bytes: bytes | None):
+    def __init__(self, banner_bytes: bytes):
         super().__init__(timeout=None)
         self.banner_bytes = banner_bytes
 
@@ -130,7 +130,8 @@ class ProfileCardView(discord.ui.View):
                 avatar_bytes, 
                 self.banner_bytes, 
                 display_name, 
-                username
+                username,
+                is_solid_bg=False
             )
             file_to_send = discord.File(card_io, filename="discord_profile.png")
             await interaction.followup.send(file=file_to_send, ephemeral=True)
@@ -169,7 +170,7 @@ def has_clear_role():
         raise commands.MissingRole("رول مسح مطلوب")
     return commands.check(predicate)
 
-# 1. أمر النشر
+# 1. أمر النشر (معدل لإرسال البنر والأفتار بشكل منفصل ونظيف)
 @bot.command(name="نشر")
 @has_nashar_role()
 async def nashar(ctx):
@@ -185,16 +186,26 @@ async def nashar(ctx):
     except Exception:
         pass
 
-    file_to_send = discord.File(io.BytesIO(banner_bytes), filename="banner.png")
+    # 1. إرسال صورة البنر وحدها مع الأزرار
+    banner_file = discord.File(io.BytesIO(banner_bytes), filename="banner.png")
     view = ProfileCardView(banner_bytes)
-    await ctx.send(file=file_to_send, view=view)
+    await ctx.send("🖼️ **صورة البنر:**", file=banner_file, view=view)
+
+    # 2. إرسال صورة الأفتار الخاص بك بشكل منفصل
+    try:
+        avatar_asset = ctx.author.display_avatar.with_size(256)
+        avatar_bytes = await avatar_asset.read()
+        avatar_file = discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")
+        await ctx.send("👤 **صورة الأفتار:**", file=avatar_file)
+    except Exception as e:
+        await ctx.send(f"تم إرسال البنر، ولكن حدث خطأ أثناء جلب الأفتار: {e}", delete_after=5)
 
 @nashar.error
 async def nashar_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         await ctx.send("عذراً، هذا الأمر مخصص للأشخاص الذين يحملون الرولات المعتمدة فقط.", delete_after=5)
 
-# 2. أمر التقييم (إذا لم يكن هناك بنر، ستكون الخلفية العلوية سوداء تماماً)
+# 2. أمر التقييم (خلفية سوداء سادة إذا لم يكن هناك بنر)
 @bot.command(name="تقيم")
 async def taqeem(ctx, member: discord.Member = None):
     target = member or ctx.author
@@ -205,9 +216,12 @@ async def taqeem(ctx, member: discord.Member = None):
 
     try:
         banner_bytes = None
+        is_solid = True
+
         if fetched_user.banner:
             banner_asset = fetched_user.banner.with_size(512)
             banner_bytes = await banner_asset.read()
+            is_solid = False
 
         avatar_asset = target.display_avatar.with_size(256)
         avatar_bytes = await avatar_asset.read()
@@ -216,7 +230,8 @@ async def taqeem(ctx, member: discord.Member = None):
             avatar_bytes,
             banner_bytes,
             target.display_name,
-            target.name
+            target.name,
+            is_solid_bg=is_solid
         )
         
         file_to_send = discord.File(card_io, filename="taqeem_profile.png")
@@ -242,7 +257,7 @@ async def set_nitro_error(ctx, error):
     if isinstance(error, commands.MissingRole):
         await ctx.send("عذراً، أمر `!ضبط` مخصص فقط للأشخاص الذين يحملون الرول المعتمد.", delete_after=5)
 
-# دالة مساعدة لحساب الوقت المتبقي بناءً على نوع الاشتراك
+# دالة مساعدة لحساب الوقت المتبقي
 async def calculate_nitro_time(ctx, duration_type):
     data = load_data()
     user_id = str(ctx.author.id)
