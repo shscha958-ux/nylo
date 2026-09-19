@@ -25,8 +25,7 @@ def load_json(filename):
 def save_json(filename, data):
   with open(filename, "w", encoding="utf-8") as f:
     json.dump(data, f, ensure_ascii=False, indent=4)
-# أمر النشر الإداري
-@bot.command(name="نشر")
+ @bot.command(name="نشر")
 @commands.has_permissions(administrator=True)
 async def broadcast(ctx, *, message: str):
   await ctx.message.delete()
@@ -40,14 +39,12 @@ async def broadcast(ctx, *, message: str):
   await ctx.send(embed=embed)
 
 
-# أمر اللايك (يدعم الإيموجيات العادية والمخصصة)
 @bot.command(name="لايك")
 async def like(ctx, emoji: str = "👍"):
   try:
     await ctx.message.add_reaction(emoji)
   except Exception as e:
     await ctx.send(f"تعذر إضافة التفاعل: {e}")
-# أمر التقييم (يجلب الاسم، الأفاتار، والبنر بدقة)
 @bot.command(name="تقيم")
 async def rate_profile(ctx, member: discord.Member = None):
   if member is None:
@@ -122,7 +119,6 @@ async def rate_profile(ctx, member: discord.Member = None):
   file = discord.File(buffer, filename="profile_card.png")
   await ctx.send(file=file)
   await loading_msg.delete()
-# نظام متجر الروليت والأدوات (بدون إيموجيات في الأزرار)
 class RouletteShopView(discord.ui.View):
 
   def __init__(self):
@@ -423,9 +419,9 @@ async def roulette(ctx):
   buffer.seek(0)
   file = discord.File(buffer, filename="roulette_winner.png")
   await ctx.send(
-      content=f"مبروك الفوز! الفائز الأخير في الروليت هو: {winner.mention}",
-   
-
+      f"مبروك الفوز! الفائز الأخير في الروليت هو: {winner.mention}", file=file
+  )
+  await loading_msg.delete()
 class MuteCancelView(discord.ui.View):
 
   def __init__(self, member: discord.Member):
@@ -437,9 +433,7 @@ class MuteCancelView(discord.ui.View):
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
     try:
-      await self.member.timeout(
-          None, reason="تم إلغاء الميوت بواسطة زر الإلغاء"
-      )
+      await self.member.timeout(None, reason="تم إلغاء الميوت")
       for child in self.children:
         child.disabled = True
       await interaction.response.edit_message(
@@ -456,13 +450,14 @@ class MuteCancelView(discord.ui.View):
 async def mute_member(ctx, member: discord.Member, minutes: int = 5):
   try:
     duration = datetime.timedelta(minutes=minutes)
-    await member.timeout(duration, reason=f"بواسطة الأمر من قِبل {ctx.author}")
-    view = MuteCancelView(member)
-    await ctx.send(
-        f"تم إخراس العضو {member.mention} لمدة {minutes} دقائق. لإلغاء الميوت اضغط"
-        " على زر إلغاء:",
-        view=view,
+    await member.timeout(
+        duration, reason=f"بواسطة الأمر من قِبل {ctx.author}"
     )
+    view = MuteCancelView(member)
+    msg = (
+        f"تم إخراس العضو {member.mention} لمدة {minutes} دقائق. اضغط على زر إلغاء"
+        " لإلغاء الميوت."
+    )
+    await ctx.send(msg, view=view)
   except Exception as e:
-
-   await ctx.send(f"تعذر تطبيق الميوت: {e}")
+    await ctx.send(f"تعذر تطبيق الميوت: {e}")
