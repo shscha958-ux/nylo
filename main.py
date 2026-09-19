@@ -47,10 +47,9 @@ def save_data(data):
 async def on_ready():
     print(f"تم تسجيل الدخول بنجاح باسم: {bot.user.name}")
 
-# دالة رسم وتصميم بطاقة البروفايل (الخلفية العلوية البنر والأسفل سوداء سادة مع الأفتار)
-async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, display_name: str, username: str):
+# دالة رسم وتصميم بطاقة البروفايل (إذا لم يكن هناك بنر، ستكون الخلفية العلوية سوداء سادة)
+async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes | None, display_name: str, username: str):
     avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
-    banner_img = Image.open(io.BytesIO(banner_bytes)).convert("RGBA")
 
     scale = 2
     card_width = 600 * scale
@@ -61,12 +60,14 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, displa
     border_thickness = 8 * scale
     avatar_outer_size = avatar_inner_size + (border_thickness * 2)
 
-    banner_img = banner_img.resize((card_width, banner_height), Image.Resampling.LANCZOS)
-
-    # اللون الأسود السادة للمساحة السفلية وتحت الأفتار
     bg_color = (0, 0, 0, 255)
     card = Image.new("RGBA", (card_width, card_height), bg_color)
-    card.paste(banner_img, (0, 0))
+
+    if banner_bytes:
+        banner_img = Image.open(io.BytesIO(banner_bytes)).convert("RGBA")
+        banner_img = banner_img.resize((card_width, banner_height), Image.Resampling.LANCZOS)
+        card.paste(banner_img, (0, 0))
+    # إذا لم يكن هناك بنر، ستظل المساحة العلوية سوداء سادة تلقائياً
 
     def create_smooth_circle_mask(size):
         mask_scale = 4
@@ -111,7 +112,7 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, displa
     return output
 
 class ProfileCardView(discord.ui.View):
-    def __init__(self, banner_bytes: bytes):
+    def __init__(self, banner_bytes: bytes | None):
         super().__init__(timeout=None)
         self.banner_bytes = banner_bytes
 
@@ -154,7 +155,6 @@ CLEAR_ROLES = [
     1513655846968496128
 ]
 
-# دوال التحقق من الرولات
 def has_nashar_role():
     async def predicate(ctx):
         if any(role.id in NASHAR_ROLES for role in ctx.author.roles):
@@ -185,15 +185,16 @@ async def nashar(ctx):
     except Exception:
         pass
 
+    file_to_send = discord.File(io.BytesIO(banner_bytes), filename="banner.png")
     view = ProfileCardView(banner_bytes)
-    await ctx.send("اضغط على الزر أدناه (Br) لإنشاء بطاقتك الشخصية:", view=view)
+    await ctx.send(file=file_to_send, view=view)
 
 @nashar.error
 async def nashar_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         await ctx.send("عذراً، هذا الأمر مخصص للأشخاص الذين يحملون الرولات المعتمدة فقط.", delete_after=5)
 
-# 2. أمر التقييم
+# 2. أمر التقييم (إذا لم يكن هناك بنر، ستكون الخلفية العلوية سوداء تماماً)
 @bot.command(name="تقيم")
 async def taqeem(ctx, member: discord.Member = None):
     target = member or ctx.author
@@ -203,11 +204,9 @@ async def taqeem(ctx, member: discord.Member = None):
         fetched_user = target
 
     try:
+        banner_bytes = None
         if fetched_user.banner:
             banner_asset = fetched_user.banner.with_size(512)
-            banner_bytes = await banner_asset.read()
-        else:
-            banner_asset = target.display_avatar.with_size(512)
             banner_bytes = await banner_asset.read()
 
         avatar_asset = target.display_avatar.with_size(256)
@@ -256,7 +255,6 @@ async def calculate_nitro_time(ctx, duration_type):
         start_date_str = data[user_id]
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
         
-        # تحديد تاريخ الانتهاء بناءً على المدة المطلوبة
         if duration_type == "year":
             try:
                 target_date = start_date.replace(year=start_date.year + 1)
@@ -309,7 +307,7 @@ async def nitro_group(ctx, sub_command: str = None, *, args=None):
     else:
         await ctx.send("يرجى تحديد النوع بشكل صحيح:\n`!نيترو سنه`\n`!نيترو شهر`\n`!نيترو شهور`", delete_after=7)
 
-# 5. أوامر مسح الرسائل (مربوطة بالرولات الجديدة)
+# 5. أوامر مسح الرسائل
 @bot.command(name="مسح_فعلي")
 @has_clear_role()
 async def clear_messages(ctx, count: int = 10):
