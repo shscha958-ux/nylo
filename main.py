@@ -252,15 +252,5 @@ async def roulette_game(ctx):
     save_json(POINTS_FILE, points_data)
     await ctx.send(f"مبروك للفائز بالروليت {winner.mention}! حصل على 50 نقطة.")
 
-# ==================== نظام الاسكات والميوت بالأسباب ====================
-REASONS_MAPPING = {
-    "1": ("طاري اهل", timedelta(minutes=15)),
-    "2": ("سب", timedelta(minutes=40)),
-    "3": ("قذف", timedelta(minutes=120))
-}
 
-@bot.command(name="اسكت")
-@has_any_role("askat")
-async def mute_chat(ctx, member: discord.Member, choice: str = None):
-    if not choice or choice not in REASONS_MAPPING:
-        options_text = "\n".join([f"**{k}** - {v[0]} (
+options_text = "1 - Family | 2 - Bad Words | 3 - Threat"
