@@ -4,7 +4,7 @@ import asyncio
 import os
 import random
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 from flask import Flask
 from threading import Thread
 
@@ -33,22 +33,17 @@ bot = commands.Bot(command_prefix=["!", "-"], intents=intents)
 
 user_points = {}
 user_inventory = {}
-default_likes = ["❤️", "🔥"]
+MASTER_ADMIN_ROLE = 1550706151308660856
 
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user.name} (ID: {bot.user.id})')
     print('Bot is ready and running!')
 
-# ==================== 1. أوامر الإدارة والعقوبات (القائمة المنسدلة والفك اليدوي) ====================
-MUTE_ROLES = [
-    1513635397568303174,
-    1513655846968496128,
-    1513655977931702322,
-    1550711376995950592,
-    1513655552700317926
-]
+def check_admin(ctx):
+    return any(role.id == MASTER_ADMIN_ROLE for role in ctx.author.roles)
 
+# ==================== 1. أوامر الإدارة والعقوبات (القائمة المنسدلة والفك اليدوي) ====================
 class MuteSelect(discord.ui.Select):
     def __init__(self, target_member: discord.Member, is_timeout: bool):
         self.target_member = target_member
@@ -72,12 +67,12 @@ class MuteSelect(discord.ui.Select):
             if self.is_timeout:
                 delta = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
                 await self.target_member.timeout(delta, reason=reason)
-                await interaction.response.send_message(f" تم عمل `اسكت` (Timeout) للعضو {self.target_member.mention} بسبب **{reason}** لمدة {minutes} دقيقة.", ephemeral=False)
+                await interaction.response.send_message(f"تم عمل اسكت للعضو {self.target_member.mention} بسبب **{reason}** لمدة {minutes} دقيقة.", ephemeral=False)
             else:
                 await self.target_member.edit(mute=True, reason=reason)
-                await interaction.response.send_message(f" تم إعطاء `ميوت` صوتي لـ {self.target_member.mention} بسبب **{reason}**.", ephemeral=False)
+                await interaction.response.send_message(f"تم إعطاء ميوت صوتي لـ {self.target_member.mention} بسبب **{reason}**.", ephemeral=False)
         except Exception as e:
-            await interaction.response.send_message(f" حدث خطأ: تأكد أن رول البوت أعلى من رول العضو وأن البوت يمتلك صلاحيات كافية. ({e})", ephemeral=True)
+            await interaction.response.send_message(f"حدث خطأ: تأكد أن رول البوت أعلى من رول العضو وأن البوت يمتلك صلاحيات كافية. ({e})", ephemeral=True)
 
 class MuteSelectView(discord.ui.View):
     def __init__(self, target_member: discord.Member, is_timeout: bool):
@@ -86,13 +81,13 @@ class MuteSelectView(discord.ui.View):
 
     @discord.ui.button(label="إلغاء", style=discord.ButtonStyle.danger, custom_id="cancel_mute_menu")
     async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(" تم إلغاء الأمر.", ephemeral=True)
+        await interaction.response.send_message("تم إلغاء الأمر.", ephemeral=True)
         self.stop()
 
 @bot.command(name="اسكت")
 async def askat(ctx, member: discord.Member = None):
-    if not any(role.id in MUTE_ROLES for role in ctx.author.roles):
-        return await ctx.send("ليس لديك الرول المناسب لاستخدام هذا الأمر.", delete_after=5)
+    if not check_admin(ctx):
+        return await ctx.send("ليس لديك رول الإدارة المخصص لاستخدام هذا الأمر.", delete_after=5)
     if not member:
         return await ctx.send("الرجاء منشن العضو المستهدف.")
     view = MuteSelectView(member, is_timeout=True)
@@ -100,8 +95,8 @@ async def askat(ctx, member: discord.Member = None):
 
 @bot.command(name="ميوت")
 async def mute_voice(ctx, member: discord.Member = None):
-    if not any(role.id in MUTE_ROLES for role in ctx.author.roles):
-        return await ctx.send("ليس لديك الرول المناسب لاستخدام هذا الأمر.", delete_after=5)
+    if not check_admin(ctx):
+        return await ctx.send("ليس لديك رول الإدارة المخصص لاستخدام هذا الأمر.", delete_after=5)
     if not member:
         return await ctx.send("الرجاء منشن العضو المستهدف.")
     view = MuteSelectView(member, is_timeout=False)
@@ -109,87 +104,52 @@ async def mute_voice(ctx, member: discord.Member = None):
 
 @bot.command(name="فك")
 async def unmute_timeout(ctx, member: discord.Member = None):
-    if not any(role.id in MUTE_ROLES for role in ctx.author.roles):
-        return await ctx.send("ليس لديك الرول المناسب لاستخدام هذا الأمر.", delete_after=5)
+    if not check_admin(ctx):
+        return await ctx.send("ليس لديك رول الإدارة المخصص لاستخدام هذا الأمر.", delete_after=5)
     if not member:
         return await ctx.send("الرجاء منشن العضو.")
     try:
         await member.timeout(None, reason=f"فك يدوي بواسطة {ctx.author}")
-        await ctx.send(f" تم فك العقوبة الكتابية (Timeout) يدوياً عن {member.mention}.")
+        await ctx.send(f"تم فك العقوبة الكتابية يدوياً عن {member.mention}.")
     except Exception as e:
-        await ctx.send(f" تعذر فك العقوبة: {e}")
+        await ctx.send(f"تعذر فك العقوبة: {e}")
 
 @bot.command(name="تكلم")
 async def unmute_voice(ctx, member: discord.Member = None):
-    if not any(role.id in MUTE_ROLES for role in ctx.author.roles):
-        return await ctx.send("ليس لديك الرول المناسب لاستخدام هذا الأمر.", delete_after=5)
+    if not check_admin(ctx):
+        return await ctx.send("ليس لديك رول الإدارة المخصص لاستخدام هذا الأمر.", delete_after=5)
     if not member:
         return await ctx.send("الرجاء منشن العضو.")
     try:
         await member.edit(mute=False, reason=f"فك صوتي يدوي بواسطة {ctx.author}")
-        await ctx.send(f" تم فك الميوت الصوتي يدوياً عن {member.mention}.")
+        await ctx.send(f"تم فك الميوت الصوتي يدوياً عن {member.mention}.")
     except Exception as e:
-        await ctx.send(f" تعذر فك الميوت الصوتي: {e}")
+        await ctx.send(f"تعذر فك الميوت الصوتي: {e}")
 
 
-# ==================== 2. أمر المسح (!مسح) ====================
-@bot.command(name="مسح")
-@commands.has_permissions(manage_messages=True)
-async def purge(ctx, amount: int = 10):
-    await ctx.channel.purge(limit=amount + 1)
-    await ctx.send(f" تم مسح {amount} رسالة بنجاح.", delete_after=3)
-
-
-# ==================== 3. أمر النشر (!نشر مع زر Br) ====================
-PUBLISH_ROLES = [
-    1513635397568303174,
-    1513655846968496128,
-    1513655977931702322,
-    1550705477485068348
-]
-
-class BrButtonView(discord.ui.View):
-    def __init__(self, banner_url: str, avatar_url: str):
-        super().__init__(timeout=None)
-        self.banner_url = banner_url
-        self.avatar_url = avatar_url
-
-    @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary, custom_id="br_button_unique")
-    async def br_action(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = discord.Embed(title="معاينة البروفايل (Banner & Avatar)", color=0x000000)
-        if self.banner_url:
-            embed.set_image(url=self.banner_url)
-        if self.avatar_url:
-            embed.set_thumbnail(url=self.avatar_url)
-        embed.set_footer(text=f"بواسطة: {interaction.user.name}", icon_url=interaction.user.display_avatar.url)
-        await interaction.response.send_message(embed=embed, ephemeral=False)
-
+# ==================== 2. أوامر النشر والتفاعل (!نشر و !لايك) ====================
 @bot.command(name="نشر")
-async def nashir(ctx, banner_url: str = None, avatar_url: str = None):
-    if not any(role.id in PUBLISH_ROLES for role in ctx.author.roles):
-        return await ctx.send("ليس لديك الصلاحية لاستخدام أمر النشر.", delete_after=5)
-    if not banner_url or not avatar_url:
-        return await ctx.send("الرجاء إرفاق رابط البنر ورابط الأفتار بالشكل الصحيح مع الأمر.")
-    
-    view = BrButtonView(banner_url, avatar_url)
-    embed = discord.Embed(description="اختر زر **Br** أدناه لعرض البروفايل بالكامل:", color=0x000000)
-    embed.set_image(url=banner_url)
-    embed.set_thumbnail(url=avatar_url)
-    await ctx.send(embed=embed, view=view)
+@commands.has_permissions(administrator=True)
+async def broadcast(ctx, *, message: str):
+    await ctx.message.delete()
+    embed = discord.Embed(
+        title="إعلان إداري", description=message, color=discord.Color.blue()
+    )
+    embed.set_footer(
+        text=f"تم النشر بواسطة: {ctx.author.display_name}",
+        icon_url=ctx.author.display_avatar.url,
+    )
+    await ctx.send(embed=embed)
 
-
-# ==================== 4. أمر التقييم بتصميم البروفايل المطابق ====================
 @bot.command(name="لايك")
-async def custom_likes(ctx, *, likes_input: str = None):
-    if not any(role.id == 1513635397568303174 for role in ctx.author.roles):
-        return await ctx.send("ليس لديك رول استخدام أمر !لايك.", delete_after=5)
-    if not likes_input:
-        return await ctx.send("الرجاء تحديد الإيموجيات (مثال: `!لايك ❤️ 🔥`).")
-    
-    global default_likes
-    default_likes = likes_input.split()
-    await ctx.send(f" تم تحديث إيموجيات اللايك التلقائية بنجاح لتصبح: {' '.join(default_likes)}")
+async def like(ctx, emoji: str = "👍"):
+    try:
+        await ctx.message.add_reaction(emoji)
+    except Exception as e:
+        await ctx.send(f"تعذر إضافة التفاعل: {e}")
 
+
+# ==================== 3. أمر التقييم بتصميم البروفايل النظيف (البنر + الأفتار فقط) ====================
 @bot.command(name="تقيم")
 async def taqeem(ctx, member: discord.Member = None):
     target = member or ctx.author
@@ -202,23 +162,23 @@ async def taqeem(ctx, member: discord.Member = None):
     card = Image.new("RGBA", (width, height), (24, 25, 28, 255))
     draw = ImageDraw.Draw(card)
 
-    # وضع البنر في الأعلى
+    # 1. وضع البنر في الأعلى بجودة عالية
     if user_obj.banner:
         banner_bytes = await user_obj.banner.read()
         banner_img = Image.open(BytesIO(banner_bytes)).convert("RGBA")
-        banner_img = banner_img.resize((width, 240))
+        banner_img = banner_img.resize((width, 320), Image.Resampling.LANCZOS)
         card.paste(banner_img, (0, 0))
     else:
-        draw.rectangle([0, 0, width, 240], fill=(45, 47, 52, 255))
+        draw.rectangle([0, 0, width, 320], fill=(45, 47, 52, 255))
 
-    # خلفية البطاقة السفلية
-    draw.rectangle([0, 240, width, height], fill=(18, 19, 22, 255))
+    # 2. خلفية المساحة السفلية السوداء بالكامل
+    draw.rectangle([0, 320, width, height], fill=(18, 19, 22, 255))
 
-    # وضع الأفتار الدائري
+    # 3. جلب وصنع الأفتار الدائري مع إطار متناسق وبجودة عالية
     avatar_bytes = await target.display_avatar.read()
     avatar_img = Image.open(BytesIO(avatar_bytes)).convert("RGBA")
-    avatar_size, avatar_border = 140, 6
-    avatar_img = avatar_img.resize((avatar_size, avatar_size))
+    avatar_size, avatar_border = 180, 8
+    avatar_img = avatar_img.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
     
     mask = Image.new("L", (avatar_size, avatar_size), 0)
     draw_mask = ImageDraw.Draw(mask)
@@ -228,57 +188,30 @@ async def taqeem(ctx, member: discord.Member = None):
     draw_abg = ImageDraw.Draw(avatar_bg)
     draw_abg.ellipse((0, 0, avatar_size + avatar_border*2, avatar_size + avatar_border*2), fill=(18, 19, 22, 255))
     
-    card.paste(avatar_bg, (34, 170), avatar_bg)
-    card.paste(avatar_img, (40, 176), mask)
-
-    try:
-        font_name = ImageFont.truetype("arial.ttf", 36)
-        font_sub = ImageFont.truetype("arial.ttf", 20)
-        font_bio = ImageFont.truetype("arial.ttf", 22)
-    except:
-        font_name = ImageFont.load_default()
-        font_sub = ImageFont.load_default()
-        font_bio = ImageFont.load_default()
-
-    # الاسم والمعلومات
-    draw.text((40, 330), f"{target.name}", fill=(255, 255, 255, 255), font=font_name)
-    draw.text((40, 380), f"{target.name}_1814 • skate life ©   NITE", fill=(170, 175, 185, 255), font=font_sub)
-    draw.text((40, 430), f"تقييم البروفايل: {random.randint(85, 100)} / 100", fill=(200, 200, 200, 255), font=font_bio)
+    card.paste(avatar_bg, (54, 220), avatar_bg)
+    card.paste(avatar_img, (62, 228), mask)
 
     buffer = BytesIO()
-    card.save(buffer, format="PNG")
+    card.save(buffer, format="PNG", quality=95)
     buffer.seek(0)
     
     file = discord.File(buffer, filename="taqeem.png")
-    msg = await ctx.send(file=file)
-    
-    for emoji in default_likes:
-        try:
-            await msg.add_reaction(emoji)
-        except Exception as e:
-            print(f"تعذر إضافة التفاعل {emoji}: {e}")
+    await ctx.send(file=file)
 
 
-# ==================== 5. نظام النقاط والتوزيع (-n) ====================
-POINTS_ROLES = [
-    1513635397568303174,
-    1513655552700317926,
-    1513655846968496128,
-    1513655977931702322
-]
-
+# ==================== 4. نظام النقاط والتوزيع (-n) ====================
 @bot.command(name="n")
 async def distribute_points(ctx, amount: int = 0, member: discord.Member = None):
-    if not any(role.id in POINTS_ROLES for role in ctx.author.roles):
+    if not check_admin(ctx):
         return await ctx.send("ليس لديك الصلاحية لتوزيع النقاط.", delete_after=5)
     if not member or amount <= 0:
         return await ctx.send("الاستخدام الصحيح: `-n [الرقم] [@العضو]`")
     
     user_points[member.id] = user_points.get(member.id, 0) + amount
-    await ctx.send(f" تم إضافة `{amount}` نقطة إلى العضو {member.mention}. رصيده الحالي: `{user_points[member.id]}` نقطة.")
+    await ctx.send(f"تم إضافة `{amount}` نقطة إلى العضو {member.mention}. رصيده الحالي: `{user_points[member.id]}` نقطة.")
 
 
-# ==================== 6. أمر سحب الأعضاء (-سحب) ====================
+# ==================== 5. أمر سحب الأعضاء (-سحب) ====================
 @bot.command(name="سحب")
 async def pull_member(ctx, member: discord.Member = None):
     if not ctx.author.voice:
@@ -291,19 +224,12 @@ async def pull_member(ctx, member: discord.Member = None):
     try:
         target_channel = ctx.author.voice.channel
         await member.move_to(target_channel, reason=f"سحب بواسطة {ctx.author}")
-        await ctx.send(f" تم سحب العضو {member.mention} إلى رومك الصوتي بنجاح.")
+        await ctx.send(f"تم سحب العضو {member.mention} إلى رومك الصوتي بنجاح.")
     except Exception as e:
-        await ctx.send(f" حدث خطأ أثناء محاولة سحب العضو: {e}")
+        await ctx.send(f"حدث خطأ أثناء محاولة سحب العضو: {e}")
 
 
-# ==================== 7. لعبة الروليت المحدثة (بدون إيموجيات، عجلة سوداء وأسماء بيضاء وأفتار بالوسط) ====================
-ROULETTE_ROLES = [
-    1513635397568303174,
-    1513655552700317926,
-    1513655846968496128,
-    1550711376995950592
-]
-
+# ==================== 6. لعبة الروليت (بدون إيموجيات، عجلة سوداء، أسماء بيضاء وأفتار بالوسط) ====================
 class RouletteShopView(discord.ui.View):
     def __init__(self, user_id: int):
         super().__init__(timeout=60)
@@ -319,7 +245,7 @@ class RouletteShopView(discord.ui.View):
         user_points[self.user_id] -= 10
         inv = user_inventory.setdefault(self.user_id, {"bomb": 0, "shield": 0, "attack": 0})
         inv["bomb"] += 1
-        await interaction.response.send_message(" اشتريت قنبلة بنجاح!", ephemeral=True)
+        await interaction.response.send_message("اشتريت قنبلة بنجاح!", ephemeral=True)
 
     @discord.ui.button(label="حماية (15 نقطة)", style=discord.ButtonStyle.primary, custom_id="shop_shield")
     async def buy_shield(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -331,7 +257,7 @@ class RouletteShopView(discord.ui.View):
         user_points[self.user_id] -= 15
         inv = user_inventory.setdefault(self.user_id, {"bomb": 0, "shield": 0, "attack": 0})
         inv["shield"] += 1
-        await interaction.response.send_message(" اشتريت درع حماية بنجاح!", ephemeral=True)
+        await interaction.response.send_message("اشتريت درع حماية بنجاح!", ephemeral=True)
 
     @discord.ui.button(label="هجمة عكسية (18 نقطة)", style=discord.ButtonStyle.success, custom_id="shop_attack")
     async def buy_attack(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -343,7 +269,7 @@ class RouletteShopView(discord.ui.View):
         user_points[self.user_id] -= 18
         inv = user_inventory.setdefault(self.user_id, {"bomb": 0, "shield": 0, "attack": 0})
         inv["attack"] += 1
-        await interaction.response.send_message(" اشتريت هجمة عكسية بنجاح!", ephemeral=True)
+        await interaction.response.send_message("اشتريت هجمة عكسية بنجاح!", ephemeral=True)
 
 class RouletteMainView(discord.ui.View):
     def __init__(self, game_session):
@@ -355,7 +281,7 @@ class RouletteMainView(discord.ui.View):
         if interaction.user in self.game_session.players:
             return await interaction.response.send_message("أنت منضم مسبقاً في اللعبة!", ephemeral=True)
         self.game_session.players.append(interaction.user)
-        await interaction.response.send_message(f" انضممت إلى لعبة الروليت بنجاح! (عدد اللاعبين: {len(self.game_session.players)})", ephemeral=True)
+        await interaction.response.send_message(f"انضممت إلى لعبة الروليت بنجاح! (عدد اللاعبين: {len(self.game_session.players)})", ephemeral=True)
 
     @discord.ui.button(label="متجر الخصائص", style=discord.ButtonStyle.secondary, custom_id="roulette_shop")
     async def open_shop(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -382,20 +308,31 @@ def generate_roulette_image(players, center_avatar_bytes):
     img = Image.new("RGBA", (size, size), (0, 0, 0, 255))
     draw = ImageDraw.Draw(img)
     
-    # رسم العجلة السوداء والأقسام والأسماء البيضاء
     num_players = len(players) if players else 1
     angle_step = 360 / num_players
     
+    try:
+        font_player = ImageFont.truetype("arial.ttf", 22)
+    except:
+        font_player = ImageFont.load_default()
+
     for i, player in enumerate(players):
         start_angle = i * angle_step
         end_angle = (i + 1) * angle_step
-        draw.pieslice([50, 50, size-50, size-50], start=start_angle, end=end_angle, fill=(20, 20, 20, 255), outline=(255, 255, 255, 255))
+        draw.pieslice([50, 50, size-50, size-50], start=start_angle, end=end_angle, fill=(15, 15, 15, 255), outline=(255, 255, 255, 255))
+        
+        import math
+        mid_angle = math.radians(start_angle + (angle_step / 2))
+        text_x = (size / 2) + 140 * math.cos(mid_angle)
+        text_y = (size / 2) + 140 * math.sin(mid_angle)
+        
+        name_text = player.display_name[:10]
+        draw.text((text_x - 30, text_y - 10), name_text, fill=(255, 255, 255, 255), font=font_player)
 
-    # وضع الأفتار في المنتصف
     if center_avatar_bytes:
         avatar = Image.open(BytesIO(center_avatar_bytes)).convert("RGBA")
         avatar_size = 140
-        avatar = avatar.resize((avatar_size, avatar_size))
+        avatar = avatar.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
         
         mask = Image.new("L", (avatar_size, avatar_size), 0)
         d_mask = ImageDraw.Draw(mask)
@@ -411,8 +348,8 @@ def generate_roulette_image(players, center_avatar_bytes):
 
 @bot.command(name="روليت")
 async def roulette_game(ctx):
-    if not any(role.id in ROULETTE_ROLES for role in ctx.author.roles):
-        return await ctx.send("ليس لديك الرول المناسب لبدء لعبة الروليت.", delete_after=5)
+    if not check_admin(ctx):
+        return await ctx.send("ليس لديك رول الإدارة المخصص لاستخدام هذا الأمر.", delete_after=5)
     
     session = RouletteGameSession(ctx)
     view = RouletteMainView(session)
@@ -431,7 +368,7 @@ async def roulette_game(ctx):
     if len(session.players) < 2:
         return await ctx.send("❌ تم إلغاء الروليت لعدم اكتمال عدد اللاعبين.")
     
-    await ctx.send(" بدأ التحدي وتصفيات الروليت!")
+    await ctx.send("بدأ التحدي وتصفيات الروليت!")
     active_players = list(session.players)
     
     while len(active_players) > 1:
@@ -441,7 +378,6 @@ async def roulette_game(ctx):
             break
         victim = random.choice(targets)
         
-        # إرسال صورة العجلة أثناء التصفية
         try:
             avatar_bytes = await victim.display_avatar.read()
         except:
@@ -464,7 +400,7 @@ async def roulette_game(ctx):
             continue
             
         active_players.remove(victim)
-        await ctx.send(f" تم استبعاد {victim.mention} من الجولة.")
+        await ctx.send(f"تم استبعاد {victim.mention} من الجولة.")
         await asyncio.sleep(2)
         
     winner = active_players[0]
