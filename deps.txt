@@ -1,6 +1,6 @@
-
 discord.py
-pillow
+Flask
+Pillow
+yt-dlp
 aiohttp
-flask
 gunicorn
