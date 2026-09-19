@@ -76,10 +76,6 @@ async def on_ready():
 @bot.command(name="ضبط")
 @has_any_role("admin_control")
 async def set_nitro_dynamic(ctx, member: discord.Member, period_type: str, date_str: str):
-    """
-    الاستخدام: !ضبط @العضو [سنة / شهر / شهور] [التاريخ]
-    مثال: !ضبط @User سنة 2026-09-19
-    """
     supported_formats = ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d"]
     parsed_date = None
     
@@ -127,7 +123,7 @@ async def check_nitro(ctx, sub_type: str = "شهر"):
     remaining = target - now
     
     if remaining.total_seconds() <= 0:
-        await ctx.send("انتهت مدة اشتراك النيترو الخاص بك! ⏳")
+        await ctx.send("انتهت مدة اشتراك النيترو الخاص بك بالفعل! ⏳")
         return
         
     await ctx.send(f"⏳ **{ctx.author.mention}، المتبقي لانتهاء اشتراك النيترو:** `{remaining.days} يوم` و `{remaining.seconds // 3600} ساعة`.")
@@ -209,7 +205,7 @@ async def clear_msgs(ctx, count: int = 10):
     except:
         pass
     deleted = await ctx.channel.purge(limit=count)
-    msg = await ctx.send(f"تم مسح {len(deleted)} رسالة بنجاح.", delete_after=3)
+    await ctx.send(f"تم مسح {len(deleted)} رسالة بنجاح.", delete_after=3)
 
 # ==================== نظام النقاط والـ -n ====================
 @bot.command(name="n")
@@ -244,19 +240,25 @@ async def roulette_game(ctx):
         victim = random.choice(game_members)
         game_members.remove(victim)
         try:
-            await victim.move_to(None) # طرد من الروم
-            await ctx.send(-> تم طرد العضو {victim.mention} من الروليت! الباقون: {len(game_members)}")
+            await victim.move_to(None)
+            await ctx.send(f"تم طرد العضو {victim.mention} من الروليت! الباقون: {len(game_members)}")
         except:
             pass
         await asyncio.sleep(3)
         
     winner = game_members[0]
     points_data = load_json(POINTS_FILE)
-    points_data[str(winner.id)] = points_data.get(str(winner.id), 0) + 50 # جائزة الفوز 50 نقطة
+    points_data[str(winner.id)] = points_data.get(str(winner.id), 0) + 50
     save_json(POINTS_FILE, points_data)
     await ctx.send(f"🏆 مبروك للفائز بالروليت {winner.mention}! حصل على 50 نقطة.")
 
 # ==================== نظام الاسكات والميوت بالأسباب ====================
 REASONS_MAPPING = {
     "1": ("طاري اهل", timedelta(minutes=15)),
-    "2": ("سب", timedelta(minute
+    "2": ("سب", timedelta(minutes=40)),
+    "3": ("قذف", timedelta(minutes=120))
+}
+
+@bot.command(name="اسكت")
+@has_any_role("askat")
+async def mute_chat(ctx, member: discord.Mem
