@@ -234,6 +234,6 @@ async def clear_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("عذراً، لا تمتلك صلاحية مسح الرسائل.", delete_after=5)
 
-if __name__ == "__main__":
-    keep_alive()
-    bot.run(os.getenv("DISCORD_TOKEN"))
+# تشغيل خادم الحفاظ على النشاط والبوت بشكل مباشر
+keep_alive()
+bot.run(os.getenv("DISCORD_TOKEN"))
