@@ -47,7 +47,7 @@ def save_data(data):
 async def on_ready():
     print(f"تم تسجيل الدخول بنجاح باسم: {bot.user.name}")
 
-# دالة رسم وتصميم بطاقة البروفايل
+# دالة رسم وتصميم بطاقة البروفايل (عند الضغط على زر Br)
 async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, display_name: str, username: str, is_solid_bg: bool = False):
     avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
 
@@ -63,7 +63,7 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, displa
     bg_color = (0, 0, 0, 255)
     card = Image.new("RGBA", (card_width, card_height), bg_color)
 
-    # إذا كان هناك بنر حقيقي، يتم وضعه في الأعلى، وإذا لم يوجد تبقى الخلفية سوداء سادة
+    # إذا كان هناك بنر، يتم وضعه، وإذا لم يوجد تبقى الخلفية سوداء سادة تماماً
     if not is_solid_bg and banner_bytes:
         banner_img = Image.open(io.BytesIO(banner_bytes)).convert("RGBA")
         banner_img = banner_img.resize((card_width, banner_height), Image.Resampling.LANCZOS)
@@ -120,18 +120,37 @@ class ProfileCardView(discord.ui.View):
     async def br_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         try:
-            avatar_asset = interaction.user.display_avatar.with_size(256)
+            target = interaction.user
+            try:
+                fetched_user = await interaction.client.fetch_user(target.id)
+            except Exception:
+                fetched_user = target
+
+            user_banner_bytes = None
+            is_solid = True
+
+            # التحقق مما إذا كان العضو الذي ضغط على الزر لديه بنر خاص به أو نستخدم المرفق
+            if fetched_user.banner:
+                banner_asset = fetched_user.banner.with_size(512)
+                user_banner_bytes = await banner_asset.read()
+                is_solid = False
+            else:
+                # إذا لم يكن لديه بنر خاص في حسابة، نستخدم البنر المرفق مع أمر النشر
+                user_banner_bytes = self.banner_bytes
+                is_solid = False
+
+            avatar_asset = target.display_avatar.with_size(256)
             avatar_bytes = await avatar_asset.read()
             
-            display_name = interaction.user.display_name
-            username = interaction.user.name
+            display_name = target.display_name
+            username = target.name
             
             card_io = await generate_profile_card(
                 avatar_bytes, 
-                self.banner_bytes, 
+                user_banner_bytes, 
                 display_name, 
                 username,
-                is_solid_bg=False
+                is_solid_bg=is_solid
             )
             file_to_send = discord.File(card_io, filename="discord_profile.png")
             await interaction.followup.send(file=file_to_send, ephemeral=True)
@@ -170,7 +189,7 @@ def has_clear_role():
         raise commands.MissingRole("رول مسح مطلوب")
     return commands.check(predicate)
 
-# 1. أمر النشر (معدل لإرسال البنر والأفتار بشكل منفصل ونظيف)
+# 1. أمر النشر (يرسل الأفتار والبنر معاَ في رسالة واحدة مع زر Br)
 @bot.command(name="نشر")
 @has_nashar_role()
 async def nashar(ctx):
@@ -186,19 +205,20 @@ async def nashar(ctx):
     except Exception:
         pass
 
-    # 1. إرسال صورة البنر وحدها مع الأزرار
-    banner_file = discord.File(io.BytesIO(banner_bytes), filename="banner.png")
-    view = ProfileCardView(banner_bytes)
-    await ctx.send("🖼️ **صورة البنر:**", file=banner_file, view=view)
-
-    # 2. إرسال صورة الأفتار الخاص بك بشكل منفصل
     try:
         avatar_asset = ctx.author.display_avatar.with_size(256)
         avatar_bytes = await avatar_asset.read()
-        avatar_file = discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")
-        await ctx.send("👤 **صورة الأفتار:**", file=avatar_file)
     except Exception as e:
-        await ctx.send(f"تم إرسال البنر، ولكن حدث خطأ أثناء جلب الأفتار: {e}", delete_after=5)
+        await ctx.send(f"حدث خطأ أثناء جلب الأفتار: {e}", delete_after=5)
+        return
+
+    # إعداد الملفين ليتم إرسالهما معاً في رسالة واحدة (جنب بعض)
+    avatar_file = discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")
+    banner_file = discord.File(io.BytesIO(banner_bytes), filename="banner.png")
+    
+    view = ProfileCardView(banner_bytes)
+    # إرسال الصورتين معاً في نفس الرسالة مرفقة بالزر
+    await ctx.send(files=[avatar_file, banner_file], view=view)
 
 @nashar.error
 async def nashar_error(ctx, error):
