@@ -9,6 +9,13 @@ import discord
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+# --- تعريف البوت والصلاحيات الأساسية ---
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
 POINTS_FILE = "points.json"
 
 
@@ -25,7 +32,10 @@ def load_json(filename):
 def save_json(filename, data):
   with open(filename, "w", encoding="utf-8") as f:
     json.dump(data, f, ensure_ascii=False, indent=4)
- @bot.command(name="نشر")
+# --- 1. أوامر النشر والتفاعل (!نشر و !لايك) ---
+
+
+@bot.command(name="نشر")
 @commands.has_permissions(administrator=True)
 async def broadcast(ctx, *, message: str):
   await ctx.message.delete()
@@ -45,6 +55,9 @@ async def like(ctx, emoji: str = "👍"):
     await ctx.message.add_reaction(emoji)
   except Exception as e:
     await ctx.send(f"تعذر إضافة التفاعل: {e}")
+# --- 2. أمر البروفايل والتقييم (!تقيم) ---
+
+
 @bot.command(name="تقيم")
 async def rate_profile(ctx, member: discord.Member = None):
   if member is None:
@@ -119,6 +132,9 @@ async def rate_profile(ctx, member: discord.Member = None):
   file = discord.File(buffer, filename="profile_card.png")
   await ctx.send(file=file)
   await loading_msg.delete()
+# --- 3. نظام الروليت ومتجر الأدوات (!روليت) ---
+
+
 class RouletteShopView(discord.ui.View):
 
   def __init__(self):
@@ -421,7 +437,10 @@ async def roulette(ctx):
   await ctx.send(
       f"مبروك الفوز! الفائز الأخير في الروليت هو: {winner.mention}", file=file
   )
-  await loading_msg.delete()
+  a
+# --- 4. أمر الإسكات والميوت وزر الإلغاء (!اسكت) ---
+
+
 class MuteCancelView(discord.ui.View):
 
   def __init__(self, member: discord.Member):
@@ -461,3 +480,7 @@ async def mute_member(ctx, member: discord.Member, minutes: int = 5):
     await ctx.send(msg, view=view)
   except Exception as e:
     await ctx.send(f"تعذر تطبيق الميوت: {e}")
+
+
+# --- 5. تشغيل البوت ---
+bot.run(os.environ.get("TOKEN"))
