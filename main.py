@@ -12,7 +12,7 @@ from threading import Thread
 import yt_dlp
 import random
 
-# إعداد خادم الويب الوهمي للحفاظ على نشاط البوت 24/7
+# إعداد خادم الويب للحفاظ على نشاط البوت 24/7
 app = Flask('')
 
 @app.route('/')
@@ -271,4 +271,4 @@ async def clear_error(ctx, error):
         await ctx.send("عذراً، لا تمتلك الرول المطلوب لمسح الرسائل.", delete_after=5)
 
 # ==================== 4. توزيع النقاط (-n) ====================
-@bot.command(n
+@bot.command(name="n"
