@@ -112,45 +112,24 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, displa
     return output
 
 class ProfileCardView(discord.ui.View):
-    def __init__(self, banner_bytes: bytes):
+    def __init__(self, avatar_bytes: bytes, banner_bytes: bytes, author_display_name: str, author_username: str):
         super().__init__(timeout=None)
+        self.avatar_bytes = avatar_bytes
         self.banner_bytes = banner_bytes
+        self.author_display_name = author_display_name
+        self.author_username = author_username
 
     @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary)
     async def br_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         try:
-            target = interaction.user
-            try:
-                fetched_user = await interaction.client.fetch_user(target.id)
-            except Exception:
-                fetched_user = target
-
-            user_banner_bytes = None
-            is_solid = True
-
-            # التحقق مما إذا كان العضو الذي ضغط على الزر لديه بنر خاص به أو نستخدم المرفق
-            if fetched_user.banner:
-                banner_asset = fetched_user.banner.with_size(512)
-                user_banner_bytes = await banner_asset.read()
-                is_solid = False
-            else:
-                # إذا لم يكن لديه بنر خاص في حسابة، نستخدم البنر المرفق مع أمر النشر
-                user_banner_bytes = self.banner_bytes
-                is_solid = False
-
-            avatar_asset = target.display_avatar.with_size(256)
-            avatar_bytes = await avatar_asset.read()
-            
-            display_name = target.display_name
-            username = target.name
-            
+            # استخدام الأفتار والبنر المحفوظين من رسالة النشر الأصلية
             card_io = await generate_profile_card(
-                avatar_bytes, 
-                user_banner_bytes, 
-                display_name, 
-                username,
-                is_solid_bg=is_solid
+                self.avatar_bytes, 
+                self.banner_bytes, 
+                self.author_display_name, 
+                self.author_username,
+                is_solid_bg=False
             )
             file_to_send = discord.File(card_io, filename="discord_profile.png")
             await interaction.followup.send(file=file_to_send, ephemeral=True)
@@ -206,6 +185,7 @@ async def nashar(ctx):
         pass
 
     try:
+        # جلب أفتار الشخص الذي قام بكتابة أمر النشر
         avatar_asset = ctx.author.display_avatar.with_size(256)
         avatar_bytes = await avatar_asset.read()
     except Exception as e:
@@ -216,8 +196,8 @@ async def nashar(ctx):
     avatar_file = discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")
     banner_file = discord.File(io.BytesIO(banner_bytes), filename="banner.png")
     
-    view = ProfileCardView(banner_bytes)
-    # إرسال الصورتين معاً في نفس الرسالة مرفقة بالزر
+    # تمرير الأفتار، البنر، واسم صاحب الأمر لكي تظهر في القالب عند الضغط على زر Br
+    view = ProfileCardView(avatar_bytes, banner_bytes, ctx.author.display_name, ctx.author.name)
     await ctx.send(files=[avatar_file, banner_file], view=view)
 
 @nashar.error
