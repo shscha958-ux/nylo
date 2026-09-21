@@ -2,12 +2,11 @@ import io
 import json
 import os
 from datetime import datetime, timedelta
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 import discord
 from discord.ext import commands
 from flask import Flask
 from threading import Thread
-import aiohttp
 
 # إعداد خادم الويب الوهمي لمنع البوت من الانطفاء (Render 24/7)
 app = Flask('')
@@ -26,7 +25,6 @@ def keep_alive():
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-intents.guilds = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -50,8 +48,10 @@ async def on_ready():
     print(f"تم تسجيل الدخول بنجاح باسم: {bot.user.name}")
 
 # ==========================================
-# 1. دالة رسم وتصميم بطاقة البروفايل (أمر !نشر و !تقيم)
+# دوال تصميم البطاقات
 # ==========================================
+
+# 1. دالة أمر !نشر و !تقيم (القديمة)
 async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, display_name: str, username: str, is_solid_bg: bool = False):
     avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
 
@@ -114,6 +114,48 @@ async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, displa
     output.seek(0)
     return output
 
+# 2. دالة أمر !us الجديد (تستخدم قالب template.png)
+async def generate_us_card(avatar_bytes: bytes, display_name: str, username: str):
+    if not os.path.exists("template.png"):
+        raise FileNotFoundError("ملف template.png غير موجود في المجلد!")
+
+    template = Image.open("template.png").convert("RGBA")
+    avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
+
+    # تعديل الأبعاد والمواضع حسب تصميم القالب الخاص بك
+    avatar_size = 140
+    avatar_img = avatar_img.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
+
+    # إنشاء قناع دائري للأفتار
+    mask = Image.new("L", (avatar_size, avatar_size), 0)
+    draw_mask = ImageDraw.Draw(mask)
+    draw_mask.ellipse((0, 0, avatar_size, avatar_size), fill=255)
+
+    # إحداثيات مكان وضع الأفتار على القالب (يمكنك تعديلها بناءً على تصميمك)
+    avatar_x = 50
+    avatar_y = 50
+    template.paste(avatar_img, (avatar_x, avatar_y), mask)
+
+    draw = ImageDraw.Draw(template)
+    try:
+        font_name = ImageFont.truetype("arial.ttf", 24)
+        font_username = ImageFont.truetype("arial.ttf", 16)
+    except IOError:
+        font_name = ImageFont.load_default()
+        font_username = ImageFont.load_default()
+
+    text_x = avatar_x + avatar_size + 20
+    text_y = avatar_y + 30
+
+    draw.text((text_x, text_y), display_name, fill=(255, 255, 255, 255), font=font_name)
+    draw.text((text_x, text_y + 30), f"@{username}", fill=(170, 170, 170, 255), font=font_username)
+
+    output = io.BytesIO()
+    template.save(output, format="PNG")
+    output.seek(0)
+    return output
+
+
 class ProfileCardView(discord.ui.View):
     def __init__(self, avatar_bytes: bytes, banner_bytes: bytes, author_display_name: str, author_username: str):
         super().__init__(timeout=None)
@@ -140,82 +182,7 @@ class ProfileCardView(discord.ui.View):
 
 
 # ==========================================
-# 2. دالة وواجهة أمر (!us) الجديد مع القالب المخصص
-# ==========================================
-class MatchView(discord.ui.View):
-    def __init__(self, banner_bytes, av1_bytes, av2_bytes):
-        super().__init__(timeout=180)
-        self.banner_bytes = banner_bytes
-        self.av1_bytes = av1_bytes
-        self.av2_bytes = av2_bytes
-
-    @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary, custom_id="us_match_btn")
-    async def merge_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(thinking=True, ephemeral=True)
-
-        try:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            template_path = os.path.join(current_dir, "template.png")
-
-            if not os.path.exists(template_path):
-                await interaction.followup.send("عذراً، ملف template.png غير موجود في المجلد!", ephemeral=True)
-                return
-
-            template = Image.open(template_path).convert("RGBA")
-            banner = Image.open(io.BytesIO(self.banner_bytes)).convert("RGBA")
-            av1 = Image.open(io.BytesIO(self.av1_bytes)).convert("RGBA")
-            av2 = Image.open(io.BytesIO(self.av2_bytes)).convert("RGBA")
-
-            width, height = template.size
-
-            # وضع البنر في المساحة العلوية (مكان الكتب)
-            banner_height = int(height * 0.61)
-            banner_resized = banner.resize((width, banner_height), Image.Resampling.LANCZOS)
-            
-            result_img = Image.new("RGBA", (width, height), (0, 0, 0, 255))
-            result_img.paste(banner_resized, (0, 0))
-
-            # إحداثيات ومقاسات الأفتارين
-            size1 = int(width * 0.23)
-            x1, y1 = int(width * 0.040), int(height * 0.405)
-
-            size2 = int(width * 0.26)
-            x2, y2 = int(width * 0.280), int(height * 0.325)
-
-            def place_avatar_with_frame(avatar, size, x, y):
-                mask = Image.new('L', (size, size), 0)
-                draw = ImageDraw.Draw(mask)
-                draw.ellipse((0, 0, size, size), fill=255)
-                fit_img = ImageOps.fit(avatar, (size, size), centering=(0.5, 0.5))
-                fit_img.putalpha(mask)
-
-                frame_size = size + 12
-                framed = Image.new("RGBA", (frame_size, frame_size), (0, 0, 0, 0))
-                draw_f = ImageDraw.Draw(framed)
-                draw_f.ellipse((0, 0, frame_size, frame_size), fill=(0, 0, 0, 255))
-                framed.paste(fit_img, (6, 6), fit_img)
-                
-                return framed, (x - 6, y - 6)
-
-            av1_framed, pos1 = place_avatar_with_frame(av1, size1, x1, y1)
-            av2_framed, pos2 = place_avatar_with_frame(av2, size2, x2, y2)
-
-            result_img.paste(av1_framed, pos1, av1_framed)
-            result_img.paste(av2_framed, pos2, av2_framed)
-
-            output = io.BytesIO()
-            result_img.save(output, format="PNG", compress_level=1)
-            output.seek(0)
-
-            file = discord.File(output, filename="match_result.png")
-            await interaction.followup.send(file=file, ephemeral=True)
-
-        except Exception as e:
-            await interaction.followup.send(f"حدث خطأ أثناء المعالجة: {e}", ephemeral=True)
-
-
-# ==========================================
-# 3. الصلاحيات والرولات المشتركة
+# الرولات المعتمدة
 # ==========================================
 NASHAR_ROLES = [
     1550705477485068348,
@@ -249,56 +216,10 @@ def has_clear_role():
 
 
 # ==========================================
-# 4. أوامر البوت
+# الأوامر
 # ==========================================
 
-# أمر !us الجديد (يتطلب 3 مرفقات ورول من رولات النشر)
-@bot.command(name="us")
-@has_nashar_role()
-async def us_command(ctx):
-    if len(ctx.message.attachments) < 3:
-        try:
-            await ctx.message.delete()
-        except:
-            pass
-        await ctx.send("❌ يجب إرفاق **3 صور** مع الأمر: البنر، الأفتار الأول، الأفتار الثاني.", delete_after=7)
-        return
-
-    banner_url = ctx.message.attachments[0].url
-    avatar1_url = ctx.message.attachments[1].url
-    avatar2_url = ctx.message.attachments[2].url
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(banner_url) as resp:
-                banner_bytes = await resp.read()
-            async with session.get(avatar1_url) as resp:
-                av1_bytes = await resp.read()
-            async with session.get(avatar2_url) as resp:
-                av2_bytes = await resp.read()
-    except Exception as e:
-        return
-
-    try:
-        await ctx.message.delete()
-    except:
-        pass
-
-    view = MatchView(banner_bytes, av1_bytes, av2_bytes)
-    files = [
-        await ctx.message.attachments[0].to_file(),
-        await ctx.message.attachments[1].to_file(),
-        await ctx.message.attachments[2].to_file()
-    ]
-    await ctx.send(files=files, view=view)
-
-@us_command.error
-async def us_error(ctx, error):
-    if isinstance(error, commands.CheckFailure):
-        await ctx.send("عذراً، أمر `!us` مخصص فقط للأشخاص الذين يحملون الرولات المعتمدة.", delete_after=5)
-
-
-# أمر النشر
+# 1. أمر !نشر القديم
 @bot.command(name="نشر")
 @has_nashar_role()
 async def nashar(ctx):
@@ -329,7 +250,7 @@ async def nashar_error(ctx, error):
         await ctx.send("عذراً، هذا الأمر مخصص للأشخاص الذين يحملون الرولات المعتمدة فقط.", delete_after=5)
 
 
-# أمر التقييم
+# 2. أمر !تقيم القديم
 @bot.command(name="تقيم")
 async def taqeem(ctx, member: discord.Member = None):
     target = member or ctx.author
@@ -364,7 +285,27 @@ async def taqeem(ctx, member: discord.Member = None):
         await ctx.send(f"حدث خطأ أثناء إنشاء بطاقة التقييم: {e}", delete_after=7)
 
 
-# أمر ضبط التاريخ
+# 3. أمر !us الجديد (يستخدم template.png تلقائياً بدون إرفاق صورة)
+@bot.command(name="us")
+async def us_command(ctx, member: discord.Member = None):
+    target = member or ctx.author
+    try:
+        avatar_asset = target.display_avatar.with_size(256)
+        avatar_bytes = await avatar_asset.read()
+
+        card_io = await generate_us_card(
+            avatar_bytes,
+            target.display_name,
+            target.name
+        )
+        
+        file_to_send = discord.File(card_io, filename="us_card.png")
+        await ctx.send(file=file_to_send)
+    except Exception as e:
+        await ctx.send(f"عذراً، حدث خطأ: {e}", delete_after=7)
+
+
+# 4. أمر ضبط التاريخ
 @bot.command(name="ضبط")
 @commands.has_role(1513635397568303174)
 async def set_nitro(ctx, member: discord.Member, target_date: str):
@@ -437,7 +378,7 @@ async def calculate_nitro_time(ctx, duration_type):
         await ctx.send(f"حدث خطأ أثناء حساب التاريخ: {e}", delete_after=5)
 
 
-# أوامر النيترو
+# 5. أوامر النيترو
 @bot.command(name="نيترو")
 async def nitro_group(ctx, sub_command: str = None, *, args=None):
     if sub_command == "سنه":
@@ -450,7 +391,7 @@ async def nitro_group(ctx, sub_command: str = None, *, args=None):
         await ctx.send("يرجى تحديد النوع بشكل صحيح:\n`!نيترو سنه`\n`!نيترو شهر`\n`!نيترو شهور`", delete_after=7)
 
 
-# أوامر مسح الرسائل
+# 6. أوامر مسح الرسائل
 @bot.command(name="مسح_فعلي")
 @has_clear_role()
 async def clear_messages(ctx, count: int = 10):
