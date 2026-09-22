@@ -1,4 +1,3 @@
-
 import io
 import json
 import os
@@ -161,7 +160,7 @@ class MatchView(discord.ui.View):
             await interaction.followup.send(f"حدث خطأ أثناء المعالجة: {e}", ephemeral=True)
 
 
-# --- واجهة أمر نشر (صورتين: أفتار وبنر) ---
+# --- واجهة أمر نشر (تم تصغير حجم الأفتار قليلاً هنا) ---
 class NasharView(discord.ui.View):
     def __init__(self, avatar_bytes, banner_bytes):
         super().__init__(timeout=180)
@@ -186,16 +185,15 @@ class NasharView(discord.ui.View):
 
             width, height = template.size
 
-            # دمج البنر في الجزء العلوي (حسب تصميم القالب)
             banner_height = int(height * 0.61)
             banner_resized = banner.resize((width, banner_height), Image.Resampling.LANCZOS)
             
             result_img = Image.new("RGBA", (width, height), (0, 0, 0, 255))
             result_img.paste(banner_resized, (0, 0))
 
-            # إحداثيات وحجم الأفتار الفردي (مثل الصورة التي أرسلتها)
-            size = int(width * 0.28)
-            x, y = int(width * 0.05), int(height * 0.38)
+            # تم تصغير حجم الأفتار قليلاً (من 0.28 إلى 0.23) مع تعديل طفيف للموقع
+            size = int(width * 0.23)
+            x, y = int(width * 0.055), int(height * 0.40)
 
             mask = Image.new('L', (size, size), 0)
             draw = ImageDraw.Draw(mask)
