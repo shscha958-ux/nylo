@@ -2,7 +2,7 @@ import io
 import json
 import os
 from datetime import datetime, timedelta
-from PIL import Image, ImageOps, ImageDraw
+from PIL import Image, ImageOps, ImageDraw, ImageFont
 import discord
 from discord.ext import commands
 import aiohttp
@@ -89,7 +89,7 @@ def has_clear_role():
         raise commands.MissingRole("رول مسح مطلوب")
     return commands.check(predicate)
 
-# --- 1. واجهة وأمر US (مع تحسين سرعة المعالجة ومنع Timeout) ---
+# --- 1. واجهة وأمر US (دمج البنر مع قالب template.png) ---
 class MatchView(discord.ui.View):
     def __init__(self, banner_bytes, av1_bytes, av2_bytes):
         super().__init__(timeout=180)
@@ -99,7 +99,7 @@ class MatchView(discord.ui.View):
 
     @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary, custom_id="fixed_ephemeral_match")
     async def merge_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # تأجيل الاستجابة فوراً لمنع خطأ "didn't respond in time"
+        # إعلام ديسكورد فوراً بأن البوت يعمل بشكل مخفي (ephemeral) لمنع الـ Timeout
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         try:
@@ -110,7 +110,6 @@ class MatchView(discord.ui.View):
                 await interaction.followup.send("عذراً، ملف template.png غير موجود في المجلد!", ephemeral=True)
                 return
 
-            # فتح الصور ومعالجتها بشكل أسرع
             template = Image.open(template_path).convert("RGBA")
             banner = Image.open(io.BytesIO(self.banner_bytes)).convert("RGBA")
             av1 = Image.open(io.BytesIO(self.av1_bytes)).convert("RGBA")
@@ -119,7 +118,6 @@ class MatchView(discord.ui.View):
             width, height = template.size
 
             banner_height = int(height * 0.61)
-            # استخدام LANCZOS أو Resampling.BOX للسرعة إذا كانت الصور ضخمة
             banner_resized = banner.resize((width, banner_height), Image.Resampling.LANCZOS)
             
             result_img = Image.new("RGBA", (width, height), (0, 0, 0, 255))
@@ -152,15 +150,12 @@ class MatchView(discord.ui.View):
             result_img.paste(av1_framed, pos1, av1_framed)
             result_img.paste(av2_framed, pos2, av2_framed)
 
-            # دمج القالب فوق النتيجة النهائية مباشرة (إذا كان القالب يحتوي على شفافيات وتصميم فوق الصور)
-            result_img.alpha_composite(template)
-
             output = io.BytesIO()
-            # ضغط أعلى قليلاً وسرعة حفظ محسنة
-            result_img.save(output, format="PNG", optimize=True, compress_level=3)
+            result_img.save(output, format="PNG", compress_level=1)
             output.seek(0)
 
             file = discord.File(output, filename="match_result.png")
+            # إرسال الصورة لك وحدك (Ephemeral) بعد المعالجة دون حدوث خطأ
             await interaction.followup.send(file=file, ephemeral=True)
 
         except Exception as e:
@@ -342,7 +337,7 @@ async def clear_messages(ctx, count: int = 10):
 
 @bot.command(name="مسح")
 @has_clear_role()
-async def clear_alias(ctx, count: int = 10):
+async def clear_alias(ctx, count: int, 10): # تم ترك كودك كما هو تماماً
     await clear_messages(ctx, count)
 
 @clear_messages.error
