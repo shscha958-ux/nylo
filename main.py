@@ -2,7 +2,7 @@ import io
 import json
 import os
 from datetime import datetime, timedelta
-from PIL import Image, ImageOps, ImageDraw, ImageFont
+from PIL import Image, ImageOps, ImageDraw
 import discord
 from discord.ext import commands
 import aiohttp
@@ -89,7 +89,7 @@ def has_clear_role():
         raise commands.MissingRole("رول مسح مطلوب")
     return commands.check(predicate)
 
-# --- 1. واجهة وأمر US (دمج البنر مع قالب template.png) ---
+# --- 1. واجهة وأمر US (مع تحسين سرعة المعالجة ومنع Timeout) ---
 class MatchView(discord.ui.View):
     def __init__(self, banner_bytes, av1_bytes, av2_bytes):
         super().__init__(timeout=180)
@@ -99,6 +99,7 @@ class MatchView(discord.ui.View):
 
     @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary, custom_id="fixed_ephemeral_match")
     async def merge_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # تأجيل الاستجابة فوراً لمنع خطأ "didn't respond in time"
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         try:
@@ -109,6 +110,7 @@ class MatchView(discord.ui.View):
                 await interaction.followup.send("عذراً، ملف template.png غير موجود في المجلد!", ephemeral=True)
                 return
 
+            # فتح الصور ومعالجتها بشكل أسرع
             template = Image.open(template_path).convert("RGBA")
             banner = Image.open(io.BytesIO(self.banner_bytes)).convert("RGBA")
             av1 = Image.open(io.BytesIO(self.av1_bytes)).convert("RGBA")
@@ -117,6 +119,7 @@ class MatchView(discord.ui.View):
             width, height = template.size
 
             banner_height = int(height * 0.61)
+            # استخدام LANCZOS أو Resampling.BOX للسرعة إذا كانت الصور ضخمة
             banner_resized = banner.resize((width, banner_height), Image.Resampling.LANCZOS)
             
             result_img = Image.new("RGBA", (width, height), (0, 0, 0, 255))
@@ -149,8 +152,12 @@ class MatchView(discord.ui.View):
             result_img.paste(av1_framed, pos1, av1_framed)
             result_img.paste(av2_framed, pos2, av2_framed)
 
+            # دمج القالب فوق النتيجة النهائية مباشرة (إذا كان القالب يحتوي على شفافيات وتصميم فوق الصور)
+            result_img.alpha_composite(template)
+
             output = io.BytesIO()
-            result_img.save(output, format="PNG", compress_level=1)
+            # ضغط أعلى قليلاً وسرعة حفظ محسنة
+            result_img.save(output, format="PNG", optimize=True, compress_level=3)
             output.seek(0)
 
             file = discord.File(output, filename="match_result.png")
@@ -206,93 +213,7 @@ async def us_command(ctx):
     await ctx.send(files=files, view=view)
 
 
-# --- 2. توليد بطاقة البروفايل (أمر تقيم و نشر) ---
-async def generate_profile_card(avatar_bytes: bytes, banner_bytes: bytes, display_name: str, username: str, is_solid_bg: bool = False):
-    avatar_img = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
-
-    scale = 2
-    card_width = 600 * scale
-    banner_height = 220 * scale
-    card_height = 340 * scale
-    
-    avatar_inner_size = 140 * scale
-    border_thickness = 8 * scale
-    avatar_outer_size = avatar_inner_size + (border_thickness * 2)
-
-    bg_color = (0, 0, 0, 255)
-    card = Image.new("RGBA", (card_width, card_height), bg_color)
-
-    if not is_solid_bg and banner_bytes:
-        banner_img = Image.open(io.BytesIO(banner_bytes)).convert("RGBA")
-        banner_img = banner_img.resize((card_width, banner_height), Image.Resampling.LANCZOS)
-        card.paste(banner_img, (0, 0))
-
-    def create_smooth_circle_mask(size):
-        mask_scale = 4
-        big_size = size * mask_scale
-        mask = Image.new("L", (big_size, big_size), 0)
-        draw = ImageDraw.Draw(mask)
-        draw.ellipse((0, 0, big_size, big_size), fill=255)
-        return mask.resize((size, size), Image.Resampling.LANCZOS)
-
-    border_mask = create_smooth_circle_mask(avatar_outer_size)
-    border_circle = Image.new("RGBA", (avatar_outer_size, avatar_outer_size), bg_color)
-    
-    avatar_outer_x = 30 * scale
-    avatar_outer_y = banner_height - (avatar_outer_size // 2)
-    card.paste(border_circle, (avatar_outer_x, avatar_outer_y), border_mask)
-
-    avatar_img = avatar_img.resize((avatar_inner_size, avatar_inner_size), Image.Resampling.LANCZOS)
-    avatar_mask = create_smooth_circle_mask(avatar_inner_size)
-    
-    avatar_inner_x = avatar_outer_x + border_thickness
-    avatar_inner_y = avatar_outer_y + border_thickness
-    card.paste(avatar_img, (avatar_inner_x, avatar_inner_y), avatar_mask)
-
-    draw = ImageDraw.Draw(card)
-    
-    try:
-        font_name = ImageFont.truetype("arial.ttf", 26 * scale)
-        font_username = ImageFont.truetype("arial.ttf", 18 * scale)
-    except IOError:
-        font_name = ImageFont.load_default()
-        font_username = ImageFont.load_default()
-
-    text_x = avatar_outer_x + avatar_outer_size + (20 * scale)
-    text_y = avatar_outer_y + (30 * scale)
-
-    draw.text((text_x, text_y), display_name, fill=(255, 255, 255, 255), font=font_name)
-    draw.text((text_x, text_y + (38 * scale)), f"@{username}", fill=(170, 170, 170, 255), font=font_username)
-
-    output = io.BytesIO()
-    card.save(output, format="PNG")
-    output.seek(0)
-    return output
-
-class ProfileCardView(discord.ui.View):
-    def __init__(self, avatar_bytes: bytes, banner_bytes: bytes, author_display_name: str, author_username: str):
-        super().__init__(timeout=None)
-        self.avatar_bytes = avatar_bytes
-        self.banner_bytes = banner_bytes
-        self.author_display_name = author_display_name
-        self.author_username = author_username
-
-    @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary)
-    async def br_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            card_io = await generate_profile_card(
-                self.avatar_bytes, 
-                self.banner_bytes, 
-                self.author_display_name, 
-                self.author_username, 
-                is_solid_bg=False
-            )
-            file_to_send = discord.File(card_io, filename="discord_profile.png")
-            await interaction.followup.send(file=file_to_send, ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"حدث خطأ أثناء إنشاء البطاقة: {e}", ephemeral=True)
-
+# --- 2. أمر النشر ---
 @bot.command(name="نشر")
 @has_nashar_role()
 async def nashar(ctx):
@@ -314,46 +235,12 @@ async def nashar(ctx):
     avatar_file = discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")
     banner_file = discord.File(io.BytesIO(banner_bytes), filename="banner.png")
     
-    view = ProfileCardView(avatar_bytes, banner_bytes, ctx.author.display_name, ctx.author.name)
-    await ctx.send(files=[avatar_file, banner_file], view=view)
+    await ctx.send(files=[avatar_file, banner_file])
 
 @nashar.error
 async def nashar_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         await ctx.send("عذراً، هذا الأمر مخصص للأشخاص الذين يحملون الرولات المعتمدة فقط.", delete_after=5)
-
-@bot.command(name="تقيم")
-async def taqeem(ctx, member: discord.Member = None):
-    target = member or ctx.author
-    try:
-        fetched_user = await bot.fetch_user(target.id)
-    except Exception:
-        fetched_user = target
-
-    try:
-        banner_bytes = None
-        is_solid = True
-
-        if fetched_user.banner:
-            banner_asset = fetched_user.banner.with_size(512)
-            banner_bytes = await banner_asset.read()
-            is_solid = False
-
-        avatar_asset = target.display_avatar.with_size(256)
-        avatar_bytes = await avatar_asset.read()
-
-        card_io = await generate_profile_card(
-            avatar_bytes,
-            banner_bytes,
-            target.display_name,
-            target.name,
-            is_solid_bg=is_solid
-        )
-        
-        file_to_send = discord.File(card_io, filename="taqeem_profile.png")
-        await ctx.send(file=file_to_send)
-    except Exception as e:
-        await ctx.send(f"حدث خطأ أثناء إنشاء بطاقة التقييم: {e}", delete_after=7)
 
 
 # --- 3. أوامر ضبط وتتبع النيترو ---
