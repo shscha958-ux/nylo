@@ -1,3 +1,4 @@
+
 import io
 import json
 import os
@@ -89,7 +90,7 @@ def has_clear_role():
         raise commands.MissingRole("رول مسح مطلوب")
     return commands.check(predicate)
 
-# --- واجهة الزر Br المشتركة ---
+# --- واجهة أمر US (3 صور) ---
 class MatchView(discord.ui.View):
     def __init__(self, banner_bytes, av1_bytes, av2_bytes):
         super().__init__(timeout=180)
@@ -159,6 +160,68 @@ class MatchView(discord.ui.View):
         except Exception as e:
             await interaction.followup.send(f"حدث خطأ أثناء المعالجة: {e}", ephemeral=True)
 
+
+# --- واجهة أمر نشر (صورتين: أفتار وبنر) ---
+class NasharView(discord.ui.View):
+    def __init__(self, avatar_bytes, banner_bytes):
+        super().__init__(timeout=180)
+        self.avatar_bytes = avatar_bytes
+        self.banner_bytes = banner_bytes
+
+    @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary, custom_id="fixed_ephemeral_nashar")
+    async def merge_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(thinking=True, ephemeral=True)
+
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            template_path = os.path.join(current_dir, "template.png")
+
+            if not os.path.exists(template_path):
+                await interaction.followup.send("عذراً، ملف template.png غير موجود في المجلد!", ephemeral=True)
+                return
+
+            template = Image.open(template_path).convert("RGBA")
+            avatar = Image.open(io.BytesIO(self.avatar_bytes)).convert("RGBA")
+            banner = Image.open(io.BytesIO(self.banner_bytes)).convert("RGBA")
+
+            width, height = template.size
+
+            # دمج البنر في الجزء العلوي (حسب تصميم القالب)
+            banner_height = int(height * 0.61)
+            banner_resized = banner.resize((width, banner_height), Image.Resampling.LANCZOS)
+            
+            result_img = Image.new("RGBA", (width, height), (0, 0, 0, 255))
+            result_img.paste(banner_resized, (0, 0))
+
+            # إحداثيات وحجم الأفتار الفردي (مثل الصورة التي أرسلتها)
+            size = int(width * 0.28)
+            x, y = int(width * 0.05), int(height * 0.38)
+
+            mask = Image.new('L', (size, size), 0)
+            draw = ImageDraw.Draw(mask)
+            draw.ellipse((0, 0, size, size), fill=255)
+            fit_img = ImageOps.fit(avatar, (size, size), centering=(0.5, 0.5))
+            fit_img.putalpha(mask)
+
+            frame_size = size + 12
+            framed = Image.new("RGBA", (frame_size, frame_size), (0, 0, 0, 0))
+            draw_f = ImageDraw.Draw(framed)
+            draw_f.ellipse((0, 0, frame_size, frame_size), fill=(0, 0, 0, 255))
+            framed.paste(fit_img, (6, 6), fit_img)
+
+            result_img.paste(framed, (x - 6, y - 6), framed)
+
+            output = io.BytesIO()
+            result_img.save(output, format="PNG", compress_level=1)
+            output.seek(0)
+
+            file = discord.File(output, filename="nashar_result.png")
+            await interaction.followup.send(file=file, ephemeral=True)
+
+        except Exception as e:
+            await interaction.followup.send(f"حدث خطأ أثناء المعالجة: {e}", ephemeral=True)
+
+
 # --- 1. أمر US ---
 @bot.command(name="us")
 async def us_command(ctx):
@@ -207,36 +270,26 @@ async def us_command(ctx):
     await ctx.send(files=files, view=view)
 
 
-# --- 2. أمر النشر (محدث ليدعم زر Br بنفس الطريقة) ---
+# --- 2. أمر النشر ---
 @bot.command(name="نشر")
 @has_nashar_role()
 async def nashar(ctx):
     if len(ctx.message.attachments) < 2:
-        await ctx.send("❌ يجب إرفاق **صورتين** على الأقل مع الأمر (البنر والأفتار)", delete_after=10)
+        await ctx.send("❌ يجب إرفاق **صورتين** مع الأمر:\n1. الصورة الأولى: **الأفتار**\n2. الصورة الثانية: **البنر**", delete_after=10)
         return
 
-    # للتعامل مع أمر النشر بـ صورتين (بنر وأفتار) سنعتبر الأفتار الأول متكرر أو نأخذ أول صورتين
-    banner_url = ctx.message.attachments[1].url if len(ctx.message.attachments) > 1 else ctx.message.attachments[0].url
-    avatar1_url = ctx.message.attachments[0].url
-    avatar2_url = ctx.message.attachments[0].url # نسخة احتياطية لكي لا يحدث خطأ إذا كانت صورتين فقط
+    avatar_attachment = ctx.message.attachments[0]
+    banner_attachment = ctx.message.attachments[1]
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(banner_url) as resp:
-                banner_bytes = await resp.read()
-            async with session.get(avatar1_url) as resp:
-                av1_bytes = await resp.read()
-            async with session.get(avatar2_url) as resp:
-                av2_bytes = await resp.read()
-    except Exception:
-        return
+    avatar_bytes = await avatar_attachment.read()
+    banner_bytes = await banner_attachment.read()
 
     try:
         await ctx.message.delete()
     except Exception:
         pass
 
-    view = MatchView(banner_bytes, av1_bytes, av2_bytes)
+    view = NasharView(avatar_bytes, banner_bytes)
     files = [
         await ctx.message.attachments[0].to_file(),
         await ctx.message.attachments[1].to_file()
