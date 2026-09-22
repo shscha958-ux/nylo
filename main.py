@@ -89,7 +89,7 @@ def has_clear_role():
         raise commands.MissingRole("رول مسح مطلوب")
     return commands.check(predicate)
 
-# --- 1. واجهة وأمر US (دمج البنر مع قالب template.png) ---
+# --- واجهة الزر Br المشتركة ---
 class MatchView(discord.ui.View):
     def __init__(self, banner_bytes, av1_bytes, av2_bytes):
         super().__init__(timeout=180)
@@ -159,6 +159,7 @@ class MatchView(discord.ui.View):
         except Exception as e:
             await interaction.followup.send(f"حدث خطأ أثناء المعالجة: {e}", ephemeral=True)
 
+# --- 1. أمر US ---
 @bot.command(name="us")
 async def us_command(ctx):
     user_role_ids = {role.id for role in ctx.author.roles}
@@ -206,29 +207,41 @@ async def us_command(ctx):
     await ctx.send(files=files, view=view)
 
 
-# --- 2. أمر النشر ---
+# --- 2. أمر النشر (محدث ليدعم زر Br بنفس الطريقة) ---
 @bot.command(name="نشر")
 @has_nashar_role()
 async def nashar(ctx):
     if len(ctx.message.attachments) < 2:
-        await ctx.send("❌ يجب إرفاق **صورتين** مع الأمر:\n1. الصورة الأولى: **الأفتار**\n2. الصورة الثانية: **البنر**", delete_after=10)
+        await ctx.send("❌ يجب إرفاق **صورتين** على الأقل مع الأمر (البنر والأفتار)", delete_after=10)
         return
 
-    avatar_attachment = ctx.message.attachments[0]
-    banner_attachment = ctx.message.attachments[1]
+    # للتعامل مع أمر النشر بـ صورتين (بنر وأفتار) سنعتبر الأفتار الأول متكرر أو نأخذ أول صورتين
+    banner_url = ctx.message.attachments[1].url if len(ctx.message.attachments) > 1 else ctx.message.attachments[0].url
+    avatar1_url = ctx.message.attachments[0].url
+    avatar2_url = ctx.message.attachments[0].url # نسخة احتياطية لكي لا يحدث خطأ إذا كانت صورتين فقط
 
-    avatar_bytes = await avatar_attachment.read()
-    banner_bytes = await banner_attachment.read()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(banner_url) as resp:
+                banner_bytes = await resp.read()
+            async with session.get(avatar1_url) as resp:
+                av1_bytes = await resp.read()
+            async with session.get(avatar2_url) as resp:
+                av2_bytes = await resp.read()
+    except Exception:
+        return
 
     try:
         await ctx.message.delete()
     except Exception:
         pass
 
-    avatar_file = discord.File(io.BytesIO(avatar_bytes), filename="avatar.png")
-    banner_file = discord.File(io.BytesIO(banner_bytes), filename="banner.png")
-    
-    await ctx.send(files=[avatar_file, banner_file])
+    view = MatchView(banner_bytes, av1_bytes, av2_bytes)
+    files = [
+        await ctx.message.attachments[0].to_file(),
+        await ctx.message.attachments[1].to_file()
+    ]
+    await ctx.send(files=files, view=view)
 
 @nashar.error
 async def nashar_error(ctx, error):
