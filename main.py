@@ -99,7 +99,6 @@ class MatchView(discord.ui.View):
 
     @discord.ui.button(label="Br", style=discord.ButtonStyle.secondary, custom_id="fixed_ephemeral_match")
     async def merge_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # إعلام ديسكورد فوراً بأن البوت يعمل بشكل مخفي (ephemeral) لمنع الـ Timeout
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         try:
@@ -155,7 +154,6 @@ class MatchView(discord.ui.View):
             output.seek(0)
 
             file = discord.File(output, filename="match_result.png")
-            # إرسال الصورة لك وحدك (Ephemeral) بعد المعالجة دون حدوث خطأ
             await interaction.followup.send(file=file, ephemeral=True)
 
         except Exception as e:
@@ -337,7 +335,7 @@ async def clear_messages(ctx, count: int = 10):
 
 @bot.command(name="مسح")
 @has_clear_role()
-async def clear_alias(ctx, count: int, 10): # تم ترك كودك كما هو تماماً
+async def clear_alias(ctx, count: int = 10):
     await clear_messages(ctx, count)
 
 @clear_messages.error
